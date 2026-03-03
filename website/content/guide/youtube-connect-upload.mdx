@@ -1,0 +1,32 @@
+---
+title: YouTube Connect & Upload
+description: OAuth sign-in and upload to YouTube.
+---
+
+<DocPage title="YouTube Connect & Upload" description="OAuth sign-in and upload to YouTube.">
+
+Connect your YouTube account to enable uploads and scheduling. The app uses **Google OAuth** (Desktop app flow): you sign in once in the browser; tokens are stored only in the main process (never in the renderer) in user data. Uploads and scheduled publishing use the **YouTube Data API v3** (`videos.insert` with optional `status.publishAt`).
+
+<StepBlock title="Step 1 — Check connection status" imageSrc="/docs/images/youtube-connect-upload/01-youtube-status.jpg" imageAlt="Top toolbar: YouTube connection chip" caption="Screenshot 01 — Top toolbar: YouTube status chip (Connected / Not connected)">
+In the **top toolbar**, the **YouTube chip** shows **Connected** (green) or **Not connected** (default). Status is determined by the presence of valid tokens in user data (<code>youtube_tokens.json</code>).
+</StepBlock>
+
+<StepBlock title="Step 2 — Connect or reconnect YouTube" imageSrc="/docs/images/youtube-connect-upload/02-connect-youtube.jpg" imageAlt="Connect YouTube" caption="Screenshot 02 — YouTube chip menu: Reconnect">
+Click the **YouTube chip**, then choose **Reconnect**. The app starts a local OAuth callback server, opens your system browser to Google’s consent page, and after you sign in and authorize, exchanges the code for tokens and saves them. Use the same **Reconnect** action if the connection has expired or was revoked. The chip menu also offers **Test connection** to verify that credentials are loaded (it does not expose tokens). OAuth credentials must be configured first: set <code>GOOGLE_CLIENT_ID</code> and <code>GOOGLE_CLIENT_SECRET</code> (or <code>YT_GOOGLE_CLIENT_ID</code> / <code>YT_GOOGLE_CLIENT_SECRET</code>), or place a <code>google_oauth_client.json</code> file (with <code>clientId</code> and <code>clientSecret</code>) in the app’s user data folder.
+</StepBlock>
+
+<StepBlock title="Step 3 — Upload to YouTube" imageSrc="/docs/images/youtube-connect-upload/03-upload.jpg" imageAlt="Publish to YouTube" caption="Screenshot 03 — Publish → YouTube only → Publish to YouTube">
+Select one or more rows, click **Publish**, choose **YouTube only**, then **Publish to YouTube**. For each selected row the app uses the **YouTube export metadata** (title, description, tags from <code>meta.byPlatform.youtube</code>), the row’s **visibility** (private / unlisted / public), and optional **schedule time** from the row’s YouTube job. If a **publish time** is set (UTC timestamp), the video is uploaded with <code>status.privacyStatus = 'private'</code> and <code>status.publishAt</code> set to that time (ISO‑8601); otherwise the video is uploaded with the chosen visibility and no schedule (publish immediately). Rows already marked as posted for YouTube are skipped. You can also schedule a single video via the **Schedule** flow (set date/time and platform YouTube), which performs the same upload/schedule logic for that row.
+</StepBlock>
+
+**How scheduling works in code**  
+The backend only sets <code>publishAt</code> when a future publish time is provided; when set, it forces <code>privacyStatus</code> to <code>private</code> and sends <code>publishAt</code> as an ISO‑8601 string to the API. Token refresh is done before upload; refreshed tokens are persisted in user data.
+
+**Common issues**
+- **OAuth / invalid_client** — Ensure: 1) OAuth client type is **Desktop app** (or **Other**), not Web application; 2) Client ID and Secret are copied correctly (env or <code>google_oauth_client.json</code>); 3) **YouTube Data API v3** is enabled in Google Cloud Console; 4) OAuth consent screen is configured and you are a test user if the app is in testing.
+- **Reconnect** — If the connection drops or tokens are invalid, use **Reconnect** from the YouTube chip menu to go through the browser flow again. **Test connection** only checks that client credentials load; it does not re-authorize the account.
+- **Credentials location** — User data (where <code>youtube_tokens.json</code> and optional <code>google_oauth_client.json</code> live) is the app’s Electron user data directory; the exact path is platform-dependent. Use **Open user data** from the YouTube/Advanced area if available in your build to open that folder.
+
+<NextLinks prev={{ slug: "exports", label: "Exports" }} next={{ slug: "manual-assist", label: "Manual Assist" }} />
+
+</DocPage>

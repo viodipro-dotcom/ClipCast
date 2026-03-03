@@ -1,0 +1,18 @@
+---
+description: AI generation for title/description/hashtags and exports
+globs:
+  - "src/main/ai/**"
+  - "**/*prompt*"
+  - "**/*metadata*"
+  - "**/*export*"
+---
+
+# AI generation rules
+- Input sources: transcript + optional user notes + platform + language.
+- Output must be deterministic in structure:
+  - title
+  - description
+  - hashtags (array)
+  - optional chapters/timestamps (if requested)
+- Never hallucinate facts: if transcript doesn't support a claim, don't include it.
+- Keep platform-specific export templates separate (YouTube vs TikTok vs Instagram).

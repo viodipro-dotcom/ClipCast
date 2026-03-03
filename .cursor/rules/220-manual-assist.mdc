@@ -1,0 +1,15 @@
+---
+description: Manual Assist workflow for Instagram/TikTok
+globs:
+  - "src/main/manual-assist/**"
+  - "**/*assist*"
+  - "**/*clipboard*"
+---
+
+# Manual Assist rules
+- Manual Assist is NOT automation of posting; it is a helper flow:
+  - Open the upload page in the user’s browser
+  - Reveal/select the local file (in-app UI) so the user can drag/drop or pick it easily
+  - Copy caption + hashtags to clipboard
+- Always show the user a confirmation/toast when clipboard content changes.
+- Never auto-fill credentials or attempt automated posting.

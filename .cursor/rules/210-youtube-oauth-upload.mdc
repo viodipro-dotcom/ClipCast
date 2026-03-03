@@ -1,0 +1,17 @@
+---
+description: YouTube OAuth, upload, scheduling
+globs:
+  - "src/main/youtube/**"
+  - "**/*youtube*"
+---
+
+# YouTube behavior
+- YouTube scheduling:
+  - Only set `status.publishAt` when `status.privacyStatus` is `private`.
+  - `publishAt` must be an ISO-8601 timestamp and must be in the future.
+- OAuth:
+  - Store tokens only in main process (never renderer).
+  - Implement refresh logic; handle expired/invalid tokens gracefully.
+- Robustness:
+  - Implement retry/backoff for transient network errors.
+  - Return clear, actionable error messages to UI (no raw token dumps).

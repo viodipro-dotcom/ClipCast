@@ -1,0 +1,4 @@
+openai>=1.0.0
+faster-whisper
+
+# ffmpeg must be installed and available on PATH

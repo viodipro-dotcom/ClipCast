@@ -1,0 +1,8 @@
+# Test videos directory
+
+Place fake test video files here for E2E tests:
+- video1.mp4
+- video2.mp4  
+- video3.mp4
+
+These don't need to be real video files - they're just paths used in E2E_TEST mode.

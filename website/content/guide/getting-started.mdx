@@ -1,0 +1,58 @@
+---
+title: Getting Started
+description: Install the app and publish your first batch.
+---
+
+<DocPage title="Getting Started" description="Install the app and publish your first batch.">
+
+This guide follows the real app workflow: **add videos** → **generate metadata** → **plan (set targets and schedule)** → **publish** (YouTube automatically, or Manual Assist for Instagram/TikTok).
+
+<StepBlock title="Step 1 — Download the app" imageSrc="/docs/images/getting-started/01-download.jpg" imageAlt="Download page with installer buttons" caption="Screenshot 01 — Download the installer for your OS">
+Go to the Download page and get the installer for Windows or macOS.
+</StepBlock>
+
+<StepBlock title="Step 2 — Install" >
+Run the installer and follow the prompts. Accept defaults or choose an install location.
+</StepBlock>
+
+<StepBlock title="Step 3 — Launch the app" >
+Launch ClipCast from the Start Menu (Windows) or Applications (macOS).
+</StepBlock>
+
+<StepBlock title="Step 4 — Main window layout" imageSrc="/docs/images/getting-started/04-main-window.jpg" imageAlt="Main window with command bar, Jobs table, and Details panel" caption="Screenshot 04 — Main window: command bar, Jobs table, Details panel">
+You work from the main window: the **top command bar** (Add, Plan, Publish, YouTube status, Settings), the **Jobs table**, and the **Details** panel on the right. Use **checkboxes** in the table to select one or more rows for bulk actions; **click a row** to open the Details panel for that video.
+</StepBlock>
+
+<StepBlock title="Step 5 — Add videos (files or folder)" imageSrc="/docs/images/getting-started/05-add-videos.jpg" imageAlt="Add Videos dialog with Files and Folder options" caption="Screenshot 05 — Add Videos dialog: Files or Folder">
+Click **Add** in the command bar to open the **Add Videos** dialog. Choose **Files** (native file picker; multi-select MP4, MOV, MKV, WEBM) or **Folder** (folder picker; the app scans for videos and adds them). Each video becomes one **row** in the Jobs table. You can also **drag-and-drop** video files onto the app. Duplicates (path already in the table or in scheduled jobs) are skipped.
+</StepBlock>
+
+<StepBlock title="Step 6 — Generate metadata (bulk)" imageSrc="/docs/images/getting-started/07-metadata-bulk.jpg" imageAlt="Publish dialog with Metadata only option" caption="Screenshot 06 — Publish → Metadata only → Generate">
+Select one or more rows, click **Publish**, choose **Metadata only**, then click **Generate**. The app runs the pipeline (transcript + AI metadata) only for rows that do not yet have metadata for the requested platforms; outputs are written under <code>yt_pipeline/outputs</code>. Row status updates to **Processing** then **Done** (or **Error**). If all selected rows already have metadata, you see a message and no pipeline runs.
+</StepBlock>
+
+<StepBlock title="Step 7 — Generate metadata (single row)" imageSrc="/docs/images/getting-started/08-metadata-single.jpg" imageAlt="Details panel metadata section with Generate" caption="Screenshot 07 — Details → Metadata → Generate">
+For a single video: click a row to open **Details**, then in the **Metadata** section click **Generate**. You can generate for all platforms or only for missing ones. Pipeline behavior is the same as bulk (outputs in <code>yt_pipeline/outputs</code>).
+</StepBlock>
+
+<StepBlock title="Step 8 — Plan: set targets and schedule" imageSrc="/docs/images/getting-started/9-plan.jpg" imageAlt="Plan dialog with times and start date" caption="Screenshot 08 — Plan: set targets, times, start date, then Apply to N items">
+Select the rows you want to schedule. Click **Plan**. In the Plan dialog: (1) **Targets** — choose **All**, **YouTube**, **Instagram**, or **TikTok** (this sets which platforms get the schedule and enables those targets on the selected rows). (2) Set **times** (e.g. presets 3/day, 4/day, or add custom times), **start date**, and **time zone**. (3) Click **Apply to N items** (the button shows the number of selected rows). The plan is applied only to the **selected** rows; each gets the chosen targets and the next available slot from the start date. If **Auto plan on import** is on, new videos you add later get default targets and may be auto-scheduled using the same plan settings.
+</StepBlock>
+
+<StepBlock title="Step 9 — Publish to YouTube" imageSrc="/docs/images/getting-started/11-publish-youtube.jpg" imageAlt="Publish dialog with YouTube only and Publish to YouTube" caption="Screenshot 09 — Publish → YouTube only → Publish to YouTube">
+Select one or more rows, click **Publish**, choose **YouTube only**, then **Publish to YouTube**. Rows with a future **publish time** are scheduled on YouTube (<code>publishAt</code>); rows without a future time are uploaded **now**. You must be signed in to YouTube (the command bar shows **YouTube connected** when ready).
+</StepBlock>
+
+<StepBlock title="Step 10 — Auto upload and Manual Assist" imageSrc="/docs/images/getting-started/12-auto-upload.jpg" imageAlt="Publish dialog Auto upload toggle and Manual Assist Center" caption="Screenshot 10 — Auto upload and Manual Assist">
+In the **Publish** dialog you can enable **Auto upload**: scheduled items run automatically. **YouTube** uploads and schedules fully in the app. For **Instagram** and **TikTok**, the app cannot upload directly; use **Manual Assist**: open the Manual Assist view in the app by going to **#/assist-center** (e.g. via a link or in-app navigation). There you see the queue of due jobs, use **Assist Next** to open the platform upload page and copy caption/hashtags to clipboard, then **Mark as posted** when done.
+</StepBlock>
+
+**Common issues**
+- **App won't start** — On Windows, install the latest Visual C++ redistributable. On macOS, if the app is blocked, go to System Preferences → Security &amp; Privacy and allow ClipCast.
+- **Where files are stored** — Row data and pipeline outputs use folders on your machine. Default pipeline output is under <code>yt_pipeline/outputs</code> (configurable in **Settings**). You can change paths in Settings.
+- **No metadata generated** — Ensure rows are **selected** before **Publish → Metadata only → Generate**. Only rows that lack metadata for the requested platforms are sent to the pipeline; if all selected already have metadata, you get a message.
+- **Plan does nothing** — You must **select at least one row** before opening Plan. The **Apply to N items** button applies the plan only to the selected rows.
+
+<NextLinks next={{ slug: "ui-overview", label: "UI Overview" }} />
+
+</DocPage>

@@ -1,0 +1,13 @@
+{
+  "clientId": "123456789-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com",
+  "clientSecret": "GOCSPX-abcdefghijklmnopqrstuvwxyz"
+}
+
+/*
+ВАЖНО:
+1. Замените значения на ваши реальные Client ID и Client Secret из Google Cloud Console
+2. Client ID должен заканчиваться на .apps.googleusercontent.com
+3. Client Secret обычно начинается с GOCSPX-
+4. Убедитесь, что OAuth client тип = "Desktop app" (НЕ "Web application"!)
+5. Переименуйте этот файл в google_oauth_client.json и поместите в папку userData приложения
+*/

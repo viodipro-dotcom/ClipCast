@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500" aria-hidden="true">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1e1b4b"/>
+      <stop offset="100%" style="stop-color:#312e81"/>
+    </linearGradient>
+    <linearGradient id="titleBar" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#3730a3"/>
+      <stop offset="100%" style="stop-color:#312e81"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="500" fill="url(#bg)" rx="8"/>
+  <rect width="800" height="36" fill="url(#titleBar)" rx="8"/>
+  <rect x="8" y="8" width="8" height="8" rx="4" fill="#6366f1"/>
+  <rect x="22" y="8" width="8" height="8" rx="4" fill="#6366f1" opacity="0.6"/>
+  <rect x="36" y="8" width="8" height="8" rx="4" fill="#6366f1" opacity="0.4"/>
+  <text x="400" y="24" text-anchor="middle" fill="rgba(255,255,255,0.9)" font-family="system-ui,sans-serif" font-size="13">YT Uploader</text>
+  <rect x="24" y="52" width="752" height="436" fill="rgba(0,0,0,0.2)" rx="4"/>
+  <text x="400" y="280" text-anchor="middle" fill="rgba(255,255,255,0.4)" font-family="system-ui,sans-serif" font-size="14">App screenshot placeholder</text>
+  <text x="400" y="305" text-anchor="middle" fill="rgba(255,255,255,0.25)" font-family="system-ui,sans-serif" font-size="12">Replace with /public/demo.png when ready</text>
+</svg>

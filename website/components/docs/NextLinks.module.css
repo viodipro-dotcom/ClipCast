@@ -1,0 +1,16 @@
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.link {
+  font-size: 0.95rem;
+}
+
+.link:hover {
+  text-decoration: underline;
+}

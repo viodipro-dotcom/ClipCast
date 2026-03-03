@@ -1,0 +1,34 @@
+---
+description: Global rules for the Electron "Creator Publisher" app
+alwaysApply: true
+---
+
+# What we are building (high-level)
+We are building an Electron desktop app for creators who post videos frequently:
+- Import MP4 files/folders
+- Generate transcript
+- Generate title/description/hashtags with AI
+- Prepare platform-specific exports for YouTube/Instagram/TikTok
+- Scheduler with daily local-time posting windows
+- Logs and audit trail
+
+Platform behavior:
+- YouTube: OAuth sign-in, upload, and schedule publishing via `publishAt`
+- Instagram/TikTok: "Manual Assist" at scheduled time:
+  - Open the upload page
+  - Show the file to upload
+  - Copy caption/hashtags to clipboard for fast posting
+
+# How you must work in this repo
+- TypeScript strict. Avoid `any` unless you justify it.
+- Follow existing project conventions (ESLint/Prettier, folder structure).
+- Do NOT invent APIs/files. Search the repo first before proposing changes.
+- For non-trivial tasks:
+  1) Summarize relevant existing architecture
+  2) Provide a 5–8 step plan and list the files you will touch
+  3) Implement in small, reviewable diffs
+
+# Security and privacy (critical)
+- OAuth tokens / secrets must never be exposed to the renderer.
+- Do not log tokens, refresh tokens, cookies, or PII.
+- If you need to store tokens, prefer OS keychain/credential store or encrypted storage in main process.

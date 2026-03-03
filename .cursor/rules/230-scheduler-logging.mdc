@@ -1,0 +1,20 @@
+---
+description: Scheduler, local-time behavior, and logging
+globs:
+  - "src/main/scheduler/**"
+  - "src/main/logging/**"
+  - "**/*schedule*"
+  - "**/*log*"
+---
+
+# Scheduler rules
+- Schedules are defined in LOCAL time (user's OS timezone).
+- Handle DST transitions:
+  - Don’t duplicate runs unexpectedly
+  - Don’t silently skip without logging a warning
+- Persist schedule state so app restarts do not lose queued runs.
+
+# Logging rules
+- Structured logs (level, timestamp, module, jobId).
+- Redact sensitive values (tokens, refresh tokens, cookies).
+- Keep user-facing “activity log” separate from debug logs if possible.

@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Creator Uploader — Ghid complet</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="hero">
+        <h1>Creator Uploader — Ghid complet (pas cu pas)</h1>
+        <p>
+          Acest ghid explică <strong>ce face aplicația</strong>, <strong>ce face fiecare funcție</strong> și
+          <strong>cum o folosești corect</strong> pentru YouTube / Instagram / TikTok.
+        </p>
+        <div class="nav">
+          <a class="pill" href="#start">🚀 Start rapid</a>
+          <a class="pill" href="#ui">🧭 Interfața (UI)</a>
+          <a class="pill" href="#import">📁 Import</a>
+          <a class="pill" href="#targets">🎯 Targets + Visibility</a>
+          <a class="pill" href="#schedule">⏰ Schedule per platformă</a>
+          <a class="pill" href="#plan">📅 Plan (bulk)</a>
+          <a class="pill" href="#publish">🚀 Publish</a>
+          <a class="pill" href="#autoupload">🤖 Auto Upload</a>
+          <a class="pill" href="#troubleshoot">🧯 Probleme frecvente</a>
+        </div>
+      </div>
+
+      <div id="start" class="section">
+        <h2>🚀 Start rapid (recomandat)</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Scenariul standard (recomandat)</h3>
+            <ol>
+              <li>Lasă <strong>Auto Plan (⏰)</strong> ON.</li>
+              <li>Apasă <strong>ADD (📁)</strong> și importă videouri.</li>
+              <li>Verifică / ajustează <strong>Targets (YT/IG/TT)</strong> și <strong>Visibility</strong>.</li>
+              <li>Pe fiecare platformă (YouTube/Instagram/TikTok) apasă <strong>Schedule</strong> dacă vrei oră diferită.</li>
+              <li>Activează <strong>Auto Upload (🚀)</strong> doar când ești gata.</li>
+            </ol>
+          </div>
+          <div class="card">
+            <h3>Scenariul “manual control”</h3>
+            <ol>
+              <li>Setează <strong>Auto Plan (⏰)</strong> OFF.</li>
+              <li>Importă videourile (nu se programează automat).</li>
+              <li>Activează target-ul dorit (ex: doar YT) și apasă <strong>Schedule</strong> pe coloana platformei.</li>
+              <li>Pornește <strong>Auto Upload (🚀)</strong> doar când vrei execuție automată.</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="callout">
+          <strong>Important:</strong> “Planificarea” (Auto Plan / Plan dialog) este diferită de “execuție” (Auto Upload).
+          Poți avea schedule setat fără să ruleze uploadul automat.
+        </div>
+      </div>
+
+      <div id="ui" class="section">
+        <h2>🧭 Interfața (ce vezi pe ecran)</h2>
+        <div class="grid">
+          <div class="shot">
+            <img src="./images/01-home.jpg" alt="Ecran principal" />
+            <div class="caption">Screenshot 01 — Ecran principal (tabel + bară comenzi).</div>
+          </div>
+        </div>
+
+        <div class="grid two">
+          <div class="shot">
+            <img src="./images/02-more-menu.jpg" alt="Meniu More Options" />
+            <div class="caption">Screenshot 02 — Meniu “More options” (⋮): Settings / Advanced / etc.</div>
+          </div>
+          <div class="shot">
+            <img src="./images/03-advanced.jpg" alt="Advanced dialog" />
+            <div class="caption">Screenshot 03 — Advanced: Auto Plan (⏰), Auto Upload (🚀), Silent Mode (🔇).</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="import" class="section">
+        <h2>📁 Import videouri</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>ADD (📁) → Files / Folder</h3>
+            <ul>
+              <li><strong>Files</strong>: selectezi unul sau mai multe fișiere video.</li>
+              <li><strong>Folder</strong>: selectezi un folder; aplicația scanează și importă toate videourile suportate.</li>
+            </ul>
+            <div class="callout">
+              <strong>Auto Plan ON:</strong> după import, aplicația calculează automat date/ore și creează job-uri pentru platformele active.
+            </div>
+            <div class="callout danger">
+              <strong>Auto Plan OFF:</strong> după import, nu se face programare automată și targets sunt OFF (default).
+            </div>
+          </div>
+          <div class="shot">
+            <img src="./images/04-add-dialog.jpg" alt="Add dialog" />
+            <div class="caption">Screenshot 04 — Dialog “Add Videos”.</div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="shot">
+            <img src="./images/05-after-import.jpg" alt="După import" />
+            <div class="caption">Screenshot 05 — După import: rânduri în tabel + paginare.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="targets" class="section">
+        <h2>🎯 Targets + Visibility</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Targets (YT / IG / TT)</h3>
+            <ul>
+              <li>Apeși pe chip-ul <strong>YT</strong> / <strong>IG</strong> / <strong>TT</strong> ca să activezi sau dezactivezi.</li>
+              <li>Targets se salvează ca “preferințe pe rând” (persistă), fără să creeze job-uri până când programezi.</li>
+            </ul>
+
+            <h3>Visibility</h3>
+            <ul>
+              <li>Setează <strong>Private / Unlisted / Public</strong> (relevant pentru YouTube).</li>
+            </ul>
+          </div>
+          <div class="shot">
+            <img src="./images/06-targets-cell.jpg" alt="Targets cell" />
+            <div class="caption">Screenshot 06 — Targets în tabel (chip-uri YT/IG/TT).</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="schedule" class="section">
+        <h2>⏰ Schedule per platformă (YouTube / Instagram / TikTok)</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Cum programezi doar o platformă</h3>
+            <ol>
+              <li>Asigură-te că target-ul platformei e ON (ex: YT).</li>
+              <li>În coloana platformei, apasă <strong>Schedule</strong>.</li>
+              <li>Alege <strong>Later</strong> și setează <strong>Date &amp; Time</strong>.</li>
+              <li>Apasă <strong>Schedule</strong> → se creează job doar pentru acea platformă.</li>
+            </ol>
+            <div class="callout">
+              <strong>Per-platform:</strong> poți avea ore diferite pentru YT vs IG vs TT, pe același video.
+            </div>
+          </div>
+          <div class="shot">
+            <img src="./images/07-schedule-dialog.jpg" alt="Schedule dialog" />
+            <div class="caption">Screenshot 07 — Dialog “Schedule for …” (Now / Later + Date &amp; Time).</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="plan" class="section">
+        <h2>📅 Plan (bulk planificare pe selecție)</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Când folosești Plan</h3>
+            <ul>
+              <li>Când vrei să aplici același “pattern” de ore pentru mai multe rânduri selectate.</li>
+              <li>Poți alege “Apply to: YouTube / Instagram / TikTok / All active”.</li>
+            </ul>
+            <h3>Pași</h3>
+            <ol>
+              <li>Selectează rândurile (checkbox).</li>
+              <li>Apasă <strong>Plan</strong>.</li>
+              <li>Alege start date, ore, timezone și “Apply to …”.</li>
+              <li>Apasă <strong>Apply</strong>.</li>
+            </ol>
+          </div>
+          <div class="shot">
+            <img src="./images/08-plan-dialog.jpg" alt="Plan dialog" />
+            <div class="caption">Screenshot 08 — Dialog “Plan” (bulk schedule).</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="publish" class="section">
+        <h2>🚀 Publish (workflow de execuție)</h2>
+        <div class="card">
+          <p class="muted">
+            Publish este un flow “operational”: poți genera metadata și/sau porni upload/schedule.
+            Recomandare: stabilește întâi Targets + Schedule, apoi folosește Publish/Auto Upload când ești gata.
+          </p>
+        </div>
+      </div>
+
+      <div id="autoupload" class="section">
+        <h2>🤖 Auto Upload (execuție la timp)</h2>
+        <div class="grid two">
+          <div class="card">
+            <h3>Ce face Auto Upload</h3>
+            <ul>
+              <li>Verifică periodic job-urile programate (“due”).</li>
+              <li><strong>YouTube</strong>: upload automat.</li>
+              <li><strong>Instagram/TikTok</strong>: Manual Assist (te ajută, nu postează automat).</li>
+            </ul>
+            <h3>Silent mode</h3>
+            <ul>
+              <li><strong>ON</strong>: doar notificare; la click se copiază text + se deschide browser/Explorer.</li>
+              <li><strong>OFF</strong>: copiază text + deschide browser/Explorer imediat (o singură dată, nu repetă la fiecare poll).</li>
+            </ul>
+          </div>
+          <div class="shot">
+            <img src="./images/03-advanced.jpg" alt="Advanced dialog" />
+            <div class="caption">Advanced — de aici pornești Auto Upload + Silent Mode.</div>
+          </div>
+        </div>
+
+        <div class="callout">
+          <strong>Important:</strong> aplicația trebuie să fie pornită (în tray) ca Auto Upload să ruleze.
+        </div>
+      </div>
+
+      <div id="troubleshoot" class="section">
+        <h2>🧯 Probleme frecvente</h2>
+        <div class="card">
+          <h3>Port 5173 ocupat</h3>
+          <p class="muted">Dacă <code>npm run dev</code> spune “Port 5173 is already in use”, închide procesul care ține portul:</p>
+          <pre>netstat -ano | findstr :5173
+taskkill /PID &lt;PID&gt; /F</pre>
+
+          <h3>Auto Plan OFF dar vrei să programezi</h3>
+          <ul>
+            <li>Activează target-ul (ex: YT) și apasă <strong>Schedule</strong> în coloana platformei.</li>
+          </ul>
+
+          <h3>YouTube nu se conectează</h3>
+          <ul>
+            <li>Advanced → “Test connection” / “Reconnect”.</li>
+            <li>Asigură-te că ai <code>google_oauth_client.json</code> în <code>userData</code>.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🖼️ Regenerare automată screenshots</h2>
+        <p class="muted">Dacă UI se schimbă, poți regenera imaginile (și ghidul rămâne up-to-date):</p>
+        <pre>npm run guide:screenshots</pre>
+        <p class="muted">Apoi deschizi:</p>
+        <pre>docs/guide/index.html</pre>
+      </div>
+    </div>
+  </body>
+</html>
+

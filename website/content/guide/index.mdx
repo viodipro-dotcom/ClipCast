@@ -1,0 +1,131 @@
+---
+title: ClipCast — Complete Guide
+description: Step-by-step guide explaining what the app does, how each feature works, and how to use it for YouTube, Instagram, and TikTok.
+---
+
+<DocPage title="ClipCast — Complete Guide" description="This guide explains what the app does, how each feature works, and how to use it correctly for YouTube, Instagram, and TikTok.">
+
+This guide walks you through the app from start to finish. Use the sidebar or the links below to jump to a section.
+
+## Quick links
+
+- [Getting Started](/guide/getting-started) — Install and first run
+- [UI Overview](/guide/ui-overview) — Main interface and toolbar
+- [Add Files & Jobs](/guide/add-files-jobs) — Import videos (Files or Folder)
+- [Targets & Visibility](/guide/exports) — YT / IG / TT targets, visibility per video
+- [Schedule per platform](/guide/scheduler) — Schedule for YouTube, Instagram, TikTok
+- [Plan (bulk)](/guide/scheduler) — Bulk scheduling with presets
+- [Publish](/guide/youtube-connect-upload) — Workflow and Auto Upload
+- [Manual Assist](/guide/manual-assist) — How IG/TikTok assist works
+- [Troubleshooting](/guide/troubleshooting) — Common issues and fixes
+
+---
+
+## Quick start (recommended)
+
+**Standard workflow**
+
+1. Keep **Auto Plan (⏰)** ON (default).
+2. Set your preferred platform in **Plan** dialog "Apply to" (this becomes the default for future imports).
+3. Click **Add (Files or Folder)** and import videos (Files or Folder).
+   - Targets are automatically enabled based on your last Plan "Apply to" setting
+   - Videos are automatically scheduled
+4. Check or adjust **Targets (YT / IG / TT)** and **Visibility** if needed.
+5. On each platform column, click **Schedule** if you want a different time.
+6. Enable **Auto Upload (🚀)** only when you are ready.
+
+**Manual control workflow**
+
+1. Set **Auto Plan (⏰)** OFF.
+2. Import videos (they will not be auto-scheduled, all targets default to OFF).
+3. Enable the target you want (e.g. YT only) and click **Schedule** in that platform column.
+4. Enable **Auto Upload (🚀)** only when you want automatic execution.
+
+<Callout type="info" title="Important">
+"Planning" (Auto Plan / Plan dialog) is different from "execution" (Auto Upload). You can have a schedule set without Auto Upload running.
+</Callout>
+
+---
+
+## How Auto Plan works
+
+When **Auto Plan** is ON and you import videos:
+
+- Targets are automatically enabled based on the last **Plan** dialog "Apply to" setting:
+  - If last Plan was set to **YouTube**, only YouTube target is enabled
+  - If last Plan was set to **Instagram**, only Instagram target is enabled
+  - If last Plan was set to **TikTok**, only TikTok target is enabled
+  - If last Plan was set to **All**, YouTube target is enabled by default (safe default)
+- The app calculates dates and times from your plan defaults (start date, time slots, time zone).
+- It creates scheduled jobs (one per platform per row) for each enabled target.
+
+When **Auto Plan** is OFF:
+
+- Imported videos are not scheduled.
+- All targets default to OFF.
+- You must manually enable targets and use Schedule or Plan to assign times.
+
+---
+
+## How Targets and Visibility work
+
+- **Targets** — Targets are stored per row and control which platforms will be scheduled when you use Schedule or Plan. Targets are enabled automatically when you schedule a platform (by clicking Schedule in the YouTube/Instagram/TikTok column), or when you use the Plan dialog "Apply to" setting. There is no separate UI to directly toggle targets — they are managed implicitly through scheduling actions.
+- **Visibility** — Set Private / Unlisted / Public (YouTube). Stored per row and displayed in the Visibility column.
+
+Targets determine which platforms get scheduled jobs when you use Schedule or Plan. When you schedule a platform for a video (by clicking Schedule in the YouTube/Instagram/TikTok column), that platform's target is automatically enabled. You can also enable targets in bulk using the Plan dialog "Apply to" setting.
+
+---
+
+## How Schedule works (per platform)
+
+For each platform (YouTube, Instagram, TikTok):
+
+1. Ensure the target for that platform is ON.
+2. In the **Jobs table**, click the **cell** for that platform (YouTube, Instagram, or TikTok) to open the **Schedule for [platform]** dialog.
+3. Choose **Schedule for later** and set **Date & time**, or **Upload now** / **Open now** / **Assist now** for immediate action.
+4. Click **Schedule** (or **Upload now** / **Open now** / **Assist now**) — a scheduled job is created for that platform and appears in the queue.
+
+You can have different times for YouTube, Instagram, and TikTok for the same video.
+
+---
+
+## How Plan works (bulk scheduling)
+
+Use **Plan** when you want to apply the same time pattern to multiple selected rows:
+
+1. Select rows (checkboxes in the Jobs table).
+2. Click **Plan** in the command bar.
+3. Set **Targets** (All / YouTube / Instagram / TikTok), **start date**, **time zone**, and **times** (presets: 3/day, 4/day, Hourly, or custom).
+4. Click **Apply to N items** (N = number of selected rows).
+
+**How "Apply to" works:**
+- **All** — Enables all 3 targets (YouTube, Instagram, TikTok) and creates scheduled jobs for all platforms
+- **YouTube / Instagram / TikTok** — Enables only that platform's target and creates scheduled jobs only for that platform
+- The selected "Apply to" setting is saved and used as the default for future imports when Auto Plan is ON
+
+Plan applies only to **unscheduled** platform slots in the selection; rows that already have a time for a platform keep it.
+
+---
+
+## How Auto Upload works
+
+Auto Upload runs in the background when enabled. It polls for due scheduled jobs in the queue and:
+
+- **YouTube** — Uploads automatically.
+- **Instagram / TikTok** — Manual Assist: copies caption+hashtags to clipboard, opens browser and Explorer (unless Silent Mode is ON).
+
+**Silent Mode ON** — Only shows the assist overlay; no automatic browser/Explorer opening. Click the overlay to trigger assist.
+
+**Silent Mode OFF** — Opens browser and Explorer automatically when a scheduled job is due (once per scheduled job, not on every poll).
+
+<Callout type="info" title="Note">
+The app must be running (in system tray) for Auto Upload to work.
+</Callout>
+
+---
+
+## Next steps
+
+Browse the full guide in the sidebar. Start with [Getting Started](/guide/getting-started) if you are new.
+
+</DocPage>

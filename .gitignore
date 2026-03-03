@@ -1,0 +1,116 @@
+########################################
+# OS / Editor
+########################################
+.DS_Store
+Thumbs.db
+
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+########################################
+# Logs
+########################################
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+
+########################################
+# Env / Secrets
+########################################
+.env
+.env.*
+**/.env
+**/.env.*
+
+
+########################################
+# Node / Package managers
+########################################
+node_modules/
+**/node_modules/
+*.local
+
+
+########################################
+# Build outputs (Vite/React/SSR/etc.)
+########################################
+dist/
+**/dist/
+dist-ssr/
+**/dist-ssr/
+
+
+########################################
+# Next.js
+########################################
+.next/
+**/.next/
+
+
+########################################
+# Electron / Desktop builds & releases
+########################################
+release/
+**/release/
+out/
+**/out/
+win-unpacked/
+**/win-unpacked/
+
+*.exe
+*.msi
+*.dmg
+*.pkg
+*.AppImage
+*.asar
+
+
+########################################
+# Playwright
+########################################
+test-results/
+playwright-report/
+playwright/.cache/
+
+
+########################################
+# Archives
+########################################
+*.zip
+*.7z
+*.rar
+
+
+########################################
+# Your pipeline outputs (DO NOT COMMIT)
+########################################
+yt_pipeline/outputs/
+yt_pipeline/outputs/**
+
+# Optional: ignore similar output folders anywhere
+**/outputs/
+**/exports/
+**/transcripts/
+**/reports/
+**/audio/
+
+# Personal notes
+NOTES.md
+TODO_PERSONAL.md
+**/personal-notes/
+*.md
+**/*.md

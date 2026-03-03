@@ -1,0 +1,60 @@
+.article {
+  margin: 0;
+  max-width: 52rem; /* comfortable reading width; center panel is fluid */
+}
+
+.title {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.description {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  font-size: 1rem;
+}
+
+.body {
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.body h2 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.body h3 {
+  margin-top: 1.25rem;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.body p {
+  margin: 0.75rem 0;
+  color: var(--text-muted);
+}
+
+.body ul,
+.body ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.body li {
+  margin-bottom: 0.35rem;
+}
+
+.body a {
+  color: #a5b4fc;
+}
+
+.placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}

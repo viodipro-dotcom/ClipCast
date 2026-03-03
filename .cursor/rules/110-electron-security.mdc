@@ -1,0 +1,15 @@
+---
+description: Electron security + IPC boundaries
+globs:
+  - "src/main/**"
+  - "src/preload/**"
+  - "src/renderer/**"
+---
+
+# Electron security
+- Keep `nodeIntegration: false` in renderer.
+- Keep `contextIsolation: true`.
+- Expose a minimal, typed API via `preload` + `contextBridge` only.
+- IPC must be allowlisted. Never expose generic "execute" or "eval" endpoints.
+- Validate and sanitize all IPC inputs before filesystem or network operations.
+- File access: prefer scoped dialogs / explicit user actions; avoid arbitrary paths from renderer.

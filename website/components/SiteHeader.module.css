@@ -1,0 +1,70 @@
+/* Top bar as panel: inset from edges (same horizontal gap as guide grid), rounded on all sides */
+.header {
+  margin: 0 20px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  padding: 0 1rem;
+}
+
+@media (max-width: 900px) {
+  .header {
+    margin: 0;
+  }
+
+  .inner {
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .nav {
+    flex-wrap: wrap;
+  }
+}
+
+.inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--text);
+  transition: color 0.15s;
+}
+
+.logoImage {
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.logo:hover {
+  text-decoration: none;
+  color: var(--brand1);
+}
+
+.nav {
+  display: flex;
+  gap: 1.75rem;
+}
+
+.navLink {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.navLink:hover {
+  color: var(--text);
+}

@@ -1,0 +1,100 @@
+/* Guide app shell: 3 panels with gap, rounded corners, panel look */
+
+.wrapper {
+  display: grid;
+  grid-template-columns: 300px 1fr 340px;
+  gap: 20px;
+  min-height: calc(100vh - 60px);
+  padding: 20px;
+  align-items: start;
+}
+
+/* Shared panel style: dark background, subtle border, soft shadow, large radius */
+.panelBase {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+.leftPanel {
+  position: sticky;
+  top: 24px;
+  min-height: 200px;
+}
+
+.searchWrap {
+  padding: 1rem 1rem 0.75rem;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0 0.75rem 1rem;
+}
+
+.navLink {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  transition: background 0.15s, color 0.15s;
+  border-radius: 8px;
+}
+
+.navLink:hover {
+  background: var(--panel2);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.navLink:focus-visible {
+  outline: 2px solid var(--brand1);
+  outline-offset: 2px;
+}
+
+.centerPanel {
+  min-width: 0; /* allow shrink in grid */
+  padding: 2rem 2.25rem;
+}
+
+.rightPanel {
+  position: sticky;
+  top: 24px;
+  min-height: 120px;
+}
+
+/* Tablet: hide right panel */
+@media (max-width: 1200px) {
+  .wrapper {
+    grid-template-columns: 280px 1fr;
+  }
+
+  .rightPanel {
+    display: none;
+  }
+}
+
+/* Mobile: single column stacked cards; sidebar, content, then tips */
+@media (max-width: 900px) {
+  .wrapper {
+    grid-template-columns: 1fr;
+    padding: 0;
+    gap: 16px;
+    align-items: stretch;
+  }
+
+  .leftPanel {
+    position: static;
+  }
+
+  .rightPanel {
+    display: block;
+    position: static;
+  }
+
+  .centerPanel {
+    padding: 1.25rem 1rem;
+  }
+}

@@ -1,0 +1,64 @@
+---
+title: FAQ
+description: Frequently asked questions about ClipCast.
+---
+
+<DocPage title="FAQ" description="Frequently asked questions about ClipCast.">
+
+## What is Auto Plan vs Auto Upload?
+
+**Auto Plan (⏰)** — When ON, newly imported videos get publish times assigned automatically based on your plan defaults (start date, time slots, time zone). When OFF, imported videos are not scheduled.
+
+**Auto Upload (🚀)** — When ON, the app runs in the background and executes due scheduled jobs from the queue: YouTube uploads automatically; Instagram/TikTok use Manual Assist (opens browser, copies metadata). The app must be running for Auto Upload to work.
+
+## What is Silent Mode?
+
+When Auto Upload is ON and a scheduled job is due for Instagram or TikTok:
+
+- **Silent Mode OFF** — The app opens the browser and Explorer, copies caption+hashtags automatically.
+- **Silent Mode ON** — No automatic opening. Use the **Assist Next** overlay to trigger assist when you are ready.
+
+## Can I have different publish times per platform?
+
+Yes. Each video can have different schedule times for YouTube, Instagram, and TikTok. Click **Schedule** in each platform column to set times independently.
+
+## What are Targets (YT / IG / TT)?
+
+Targets are per-video switches. Turn a platform ON to include it when you schedule or apply a plan. Targets persist per row but do not create scheduled jobs until you use Schedule or Plan.
+
+## What formats are supported?
+
+Supported video formats: MP4, MOV, AVI, MKV, WEBM, FLV, WMV, M4V.
+
+## Where are exports stored?
+
+By default, pipeline outputs (transcripts, metadata, exports) go to <code>yt_pipeline/outputs</code>. You can change this in Settings.
+
+## Port 5173 already in use — what do I do?
+
+If <code>npm run dev</code> reports the port is in use, find and stop the process:
+
+<pre>netstat -ano | findstr :5173
+taskkill /PID &lt;PID&gt; /F</pre>
+
+(On macOS/Linux, use <code>lsof -i :5173</code> and <code>kill</code>.)
+
+## YouTube won't connect — what to check?
+
+1. OAuth client type must be **Desktop app** (not Web application).
+2. Copy Client ID and Secret fully.
+3. Enable **YouTube Data API v3** in Google Cloud Console.
+4. Configure the OAuth consent screen.
+5. Place <code>google_oauth_client.json</code> in the UserData folder (use **Open UserData** from **Settings** → **Account**).
+
+## How do I regenerate guide screenshots?
+
+If the UI changes and you need fresh screenshots, from the app repo root run:
+
+<pre>npm run screenshots</pre>
+
+Then open the website guide at <code>/guide/screenshots</code> to view all images.
+
+<NextLinks prev={{ slug: "troubleshooting", label: "Troubleshooting" }} />
+
+</DocPage>
