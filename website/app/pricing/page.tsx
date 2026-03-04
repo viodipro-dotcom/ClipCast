@@ -76,6 +76,7 @@ export default async function PricingPage() {
     getCurrentUserSubscription(),
   ]);
   const isSignedIn = !!user;
+  const hasBillingAccount = !!subscription?.customer_id;
   const hasActiveTrialOrPlan =
     !!entitlement &&
     entitlement.status === "active" &&
@@ -109,21 +110,17 @@ export default async function PricingPage() {
 
           if (!isSignedIn) {
             cta = "Sign in to choose";
-          } else if (!hasActiveSubscription) {
-            if (planId !== "try_free") {
-              cta = "Choose";
-              action = "checkout";
-            }
+          } else if (planId === "try_free") {
+            action = "trial";
+          } else if (!hasBillingAccount) {
+            cta = "Subscribe";
+            action = "checkout";
+          } else if (isCurrentPlan) {
+            cta = "Manage billing";
+            action = "portal";
           } else {
-            if (planId === "try_free") {
-              action = "trial";
-            } else if (isCurrentPlan) {
-              cta = "Manage billing";
-              action = "portal";
-            } else {
-              cta = `Switch to ${PLAN_LABELS[planId]}`;
-              action = "portal";
-            }
+            cta = `Switch to ${PLAN_LABELS[planId]}`;
+            action = "portal";
           }
           return (
             <div
