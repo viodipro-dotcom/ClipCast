@@ -53,6 +53,10 @@ export function PricingPlanActions({
   };
 
   const handlePaidPlan = async () => {
+    if (!isSignedIn) {
+      router.push("/login?returnTo=/pricing");
+      return;
+    }
     setLoading(true);
     setBillingMessage(null);
     try {
@@ -72,20 +76,12 @@ export function PricingPlanActions({
         window.location.href = data.url;
         return;
       }
-      if (
-        data.code === "STRIPE_NOT_CONFIGURED" ||
-        data.error === "STRIPE_NOT_CONFIGURED"
-      ) {
-        setBillingMessage("Billing not configured yet. Stripe will be enabled soon.");
-        return;
-      }
-      if (data.code === "PLAN_NOT_AVAILABLE") {
-        setBillingMessage("Agency plan is coming soon.");
-        return;
-      }
-      setBillingMessage(data.message || "Checkout could not be started.");
-    } catch {
-      setBillingMessage("Something went wrong.");
+      const message = data.message || "Checkout could not be started.";
+      const visible = res.status > 0 ? `(${res.status}) ${message}` : message;
+      setBillingMessage(visible);
+    } catch (err) {
+      const fallback = err instanceof Error ? err.message : "Something went wrong.";
+      setBillingMessage(fallback);
     } finally {
       setLoading(false);
     }
@@ -109,20 +105,12 @@ export function PricingPlanActions({
         window.location.href = data.url;
         return;
       }
-      if (
-        data.code === "STRIPE_NOT_CONFIGURED" ||
-        data.error === "STRIPE_NOT_CONFIGURED"
-      ) {
-        setBillingMessage("Billing not configured yet. Stripe will be enabled soon.");
-        return;
-      }
-      if (data.code === "NO_CUSTOMER") {
-        setBillingMessage("No billing account found. Subscribe to a plan first.");
-        return;
-      }
-      setBillingMessage(data.message || "Could not open billing.");
-    } catch {
-      setBillingMessage("Something went wrong.");
+      const message = data.message || "Could not open billing.";
+      const visible = res.status > 0 ? `(${res.status}) ${message}` : message;
+      setBillingMessage(visible);
+    } catch (err) {
+      const fallback = err instanceof Error ? err.message : "Something went wrong.";
+      setBillingMessage(fallback);
     } finally {
       setLoading(false);
     }
@@ -166,7 +154,7 @@ export function PricingPlanActions({
         disabled={loading}
         onClick={async () => {
           if (!isSignedIn) {
-            router.push("/account");
+            router.push("/login?returnTo=/pricing");
             return;
           }
           if (action === "portal") {

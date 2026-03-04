@@ -74,6 +74,7 @@ export async function POST(request: Request) {
   }
 
   if (!isStripeConfigured()) {
+    console.warn("[create-checkout-session] STRIPE_SECRET_KEY not set");
     return notConfigured();
   }
 
@@ -84,12 +85,19 @@ export async function POST(request: Request) {
 
   const priceId = getStripePriceId(planId);
   if (!priceId) {
+    const envVar =
+      planId === "basic"
+        ? "STRIPE_PRICE_ID_BASIC"
+        : planId === "pro"
+          ? "STRIPE_PRICE_ID_PRO"
+          : "STRIPE_PRICE_ID_PRO_PLUS";
+    console.warn(`[create-checkout-session] Missing ${envVar} for plan ${planId}`);
     return NextResponse.json(
       {
         ok: false,
-        code: "STRIPE_NOT_CONFIGURED",
-        error: "STRIPE_NOT_CONFIGURED",
-        message: "Billing is not configured yet. Price IDs are missing.",
+        code: "PRICE_ID_MISSING",
+        error: "PRICE_ID_MISSING",
+        message: `Stripe Price ID not configured for ${planId}. Set ${envVar} in Vercel env.`,
       },
       { status: 503 }
     );
