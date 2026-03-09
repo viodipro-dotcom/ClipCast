@@ -5,6 +5,8 @@ import {
   getCurrentUserSubscription,
 } from "@/lib/supabase/server";
 import { planDisplayName } from "@/lib/plans";
+import { getUsage } from "@/lib/usage/getUsage";
+import { UsageCard } from "@/components/account/UsageCard";
 import { AccountSection } from "./AccountSection";
 import { AccountErrorBanner } from "./AccountErrorBanner";
 import { ManageBillingButton } from "./ManageBillingButton";
@@ -40,10 +42,11 @@ export default async function AccountPage({
   const trialResult = params?.trial;
   const infoMessage = params?.message;
 
-  const [user, entitlement, subscription] = await Promise.all([
+  const [user, entitlement, subscription, usage] = await Promise.all([
     getCurrentUser(),
     getCurrentUserEntitlement(),
     getCurrentUserSubscription(),
+    getUsage(),
   ]);
 
   const supabaseConfigured = !!(
@@ -154,6 +157,8 @@ export default async function AccountPage({
           </p>
         )}
       </section>
+
+      <UsageCard signedIn={!!user} usage={usage} />
 
       {process.env.NODE_ENV !== "production" && (
         <section className={styles.section} aria-label="Debug info">

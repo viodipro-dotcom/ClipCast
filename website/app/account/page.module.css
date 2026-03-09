@@ -39,6 +39,23 @@
   color: var(--text-muted);
 }
 
+.usageRow {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.usageLabel {
+  min-width: 90px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.usageValue {
+  color: var(--text-muted);
+}
+
 .debugRow {
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
