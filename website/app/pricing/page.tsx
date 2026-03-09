@@ -18,7 +18,8 @@ const PLAN_FEATURES: Record<
     lines: [
       "5 uploads",
       "15 metadata generations",
-      "1 YouTube account",
+      "YouTube: connect & upload",
+      "Switch channels anytime",
     ],
     cta: "Try Free",
     ctaHref: "/account",
@@ -29,7 +30,8 @@ const PLAN_FEATURES: Record<
     lines: [
       "50 uploads / month",
       "150 metadata generations / month",
-      "1 YouTube account",
+      "YouTube: connect & upload",
+      "Switch channels anytime",
     ],
     cta: "Choose Basic",
     ctaHref: "/account",
@@ -40,7 +42,8 @@ const PLAN_FEATURES: Record<
     lines: [
       "200 uploads / month",
       "400 metadata generations / month",
-      "1 YouTube account",
+      "YouTube: connect & upload",
+      "Switch channels anytime",
     ],
     cta: "Choose Pro",
     ctaHref: "/account",
@@ -51,7 +54,8 @@ const PLAN_FEATURES: Record<
     lines: [
       "500 uploads / month",
       "1000 metadata generations / month",
-      "1 YouTube account",
+      "YouTube: connect & upload",
+      "Switch channels anytime",
     ],
     cta: "Choose Pro+",
     ctaHref: "/account",
