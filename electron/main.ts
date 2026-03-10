@@ -15,7 +15,25 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
   ? path.join(process.env.APP_ROOT, "public")
   : RENDERER_DIST;
 
+const PROTOCOL_SCHEME = "clipcast";
+
+function getDeepLinkFromArgv(argv: string[]): string | null {
+  if (!Array.isArray(argv)) return null;
+  const found = argv.find((arg) => typeof arg === "string" && arg.startsWith(`${PROTOCOL_SCHEME}://`));
+  return found ?? null;
+}
+
+function focusWindowAndSendDeepLink(url: string) {
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    win.webContents.send("auth:deep-link", url);
+  }
+}
+
 let win: BrowserWindow | null = null;
+let pendingDeepLink: string | null = null;
 let currentProc: ReturnType<typeof spawn> | null = null;
 
 // --- Your pipeline paths
@@ -156,6 +174,13 @@ function createWindow() {
   } else {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
+
+  win.webContents.once("did-finish-load", () => {
+    if (pendingDeepLink) {
+      win?.webContents.send("auth:deep-link", pendingDeepLink);
+      pendingDeepLink = null;
+    }
+  });
 }
 
 app.on("window-all-closed", () => {
@@ -168,6 +193,40 @@ app.on("window-all-closed", () => {
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
+
+// -------------------- deep link (clipcast://) --------------------
+if (app.isPackaged) {
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+} else if (process.platform === "win32") {
+  // Dev on Windows: OS launches electron via path + args; URL is appended as next arg.
+  const appPath = path.resolve(process.cwd());
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [appPath]);
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+}
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (_event, argv: string[]) => {
+    const url = getDeepLinkFromArgv(argv);
+    if (url) focusWindowAndSendDeepLink(url);
+    else if (win && !win.isDestroyed()) {
+      win.focus();
+    }
+  });
+}
+
+if (process.platform === "darwin") {
+  app.on("open-url", (event, url) => {
+    event.preventDefault();
+    if (url.startsWith(`${PROTOCOL_SCHEME}://`)) {
+      if (win && !win.isDestroyed()) focusWindowAndSendDeepLink(url);
+      else pendingDeepLink = url;
+    }
+  });
+}
 
 // -------------------- dialogs --------------------
 ipcMain.handle("dialog:openFiles", async () => {
@@ -391,5 +450,7 @@ ipcMain.handle("pipeline:cancel", async () => {
 });
 
 app.whenReady().then(() => {
+  const argvDeepLink = getDeepLinkFromArgv(process.argv);
+  if (argvDeepLink) pendingDeepLink = argvDeepLink;
   createWindow();
 });

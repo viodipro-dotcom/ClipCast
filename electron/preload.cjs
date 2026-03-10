@@ -128,4 +128,24 @@ contextBridge.exposeInMainWorld('api', {
   assistCenterAssistJob: (payload) => ipcRenderer.invoke('assistcenter:assistJob', payload),
   assistCenterMarkDone: (payload) => ipcRenderer.invoke('assistcenter:markDone', payload),
   assistCenterSkipJob: (payload) => ipcRenderer.invoke('assistcenter:skipJob', payload),
+
+  // deep link (clipcast://auth/callback) for browser login flow — channel: "auth:deep-link"
+  onAuthDeepLink: (cb) => {
+    const handler = (_event, url) => cb(url);
+    ipcRenderer.on('auth:deep-link', handler);
+    return () => ipcRenderer.removeListener('auth:deep-link', handler);
+  },
+});
+
+// Auth / OAuth: open external URL + receive deep link callback (channel: auth:callback)
+contextBridge.exposeInMainWorld('clipcast', {
+  openExternal: (url) => ipcRenderer.invoke('auth:openExternal', url),
+  onAuthCallback: (cb) => {
+    const handler = (_event, url) => cb(url);
+    ipcRenderer.on('auth:callback', handler);
+    return () => ipcRenderer.removeListener('auth:callback', handler);
+  },
+  removeAuthCallbackListener: (unsubscribe) => {
+    if (typeof unsubscribe === 'function') unsubscribe();
+  },
 });

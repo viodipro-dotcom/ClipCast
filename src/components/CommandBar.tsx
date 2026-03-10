@@ -7,6 +7,7 @@ export interface CommandBarProps {
   onAddClick: () => void;
   onPlanClick: () => void;
   onPublishClick: () => void;
+  disablePlanAndPublish?: boolean;
   youtubeConnected: boolean;
   queueCount: number;
   onInterfaceClick?: () => void;
@@ -23,6 +24,7 @@ export default function CommandBar({
   onAddClick,
   onPlanClick,
   onPublishClick,
+  disablePlanAndPublish = false,
   youtubeConnected,
   queueCount,
   onInterfaceClick,
@@ -116,6 +118,7 @@ export default function CommandBar({
         <Button
           variant="outlined"
           onClick={onPlanClick}
+          disabled={disablePlanAndPublish}
           startIcon="📅"
           sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
         >
@@ -125,6 +128,7 @@ export default function CommandBar({
           variant="contained"
           color="primary"
           onClick={onPublishClick}
+          disabled={disablePlanAndPublish}
           startIcon="🚀"
           sx={{ textTransform: 'none', fontWeight: 600, borderRadius: 2 }}
         >

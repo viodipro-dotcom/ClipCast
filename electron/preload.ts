@@ -24,6 +24,7 @@ export interface Api {
   onPipelineLog(cb: (e: PipelineLogEvent) => void): () => void;
   onPipelineExit(cb: (e: PipelineExitEvent) => void): () => void;
   onPipelineFileDone?(cb: (e: PipelineFileDoneEvent) => void): () => void;
+  onAuthDeepLink(cb: (url: string) => void): () => void;
 
   // backward compat
   runRunPipeline?(payload: PipelinePayload): Promise<RunResult>;
@@ -50,6 +51,11 @@ const api: Api = {
     const h = (_: unknown, data: any) => cb(data);
     ipcRenderer.on("pipeline:fileDone", h);
     return () => ipcRenderer.removeListener("pipeline:fileDone", h);
+  },
+  onAuthDeepLink: (cb) => {
+    const h = (_: unknown, url: string) => cb(url);
+    ipcRenderer.on("auth:deep-link", h);
+    return () => ipcRenderer.removeListener("auth:deep-link", h);
   },
   runRunPipeline: (payload) => ipcRenderer.invoke("pipeline:runPipeline", payload),
 };

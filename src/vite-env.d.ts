@@ -1,6 +1,12 @@
+/// <reference types="vite/client" />
 import type { CustomAiPreset, CustomAiPresetSummary, CustomAiPlatformMap, CustomAiSettings, JobRow } from './types';
 
 export {};
+
+interface ImportMetaEnv {
+  readonly VITE_SUPABASE_URL?: string;
+  readonly VITE_SUPABASE_ANON_KEY?: string;
+}
 
 export type PipelinePayload = {
   mode: 'files' | 'folder';
@@ -21,6 +27,11 @@ export type PipelineFileDoneMsg = {
 
 declare global {
   interface Window {
+    clipcast?: {
+      openExternal: (url: string) => Promise<{ ok?: boolean; error?: string }>;
+      onAuthCallback: (cb: (url: string) => void) => () => void;
+      removeAuthCallbackListener?: (unsubscribe: () => void) => void;
+    };
     api?: {
       // recommended
       pickVideos: () => Promise<string[]>;

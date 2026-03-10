@@ -28,4 +28,10 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("pipeline:fileDone", handler);
     return () => ipcRenderer.removeListener("pipeline:fileDone", handler);
   },
+
+  onAuthDeepLink: (cb) => {
+    const handler = (_evt, url) => cb(url);
+    ipcRenderer.on("auth:deep-link", handler);
+    return () => ipcRenderer.removeListener("auth:deep-link", handler);
+  },
 });

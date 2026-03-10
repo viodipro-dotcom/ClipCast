@@ -69,6 +69,15 @@ import AssistCenter from './components/AssistCenter';
 import AssistOverlay from './components/AssistOverlay';
 import { useTranslation } from 'react-i18next';
 import { UI_LANGUAGE_OPTIONS } from './i18n/languages';
+import { parseParamsFromUrl } from './lib/authDeepLink';
+import { getSupabase } from './lib/supabase';
+import {
+  INITIAL_AUTH_ENTITLEMENT,
+  loadAuthAndEntitlement as loadAuthAndEntitlementState,
+  type AuthEntitlementSnapshot,
+} from './lib/entitlement';
+import { consumeMetadata, consumeUpload, getUsageSnapshot, type UsageSnapshot } from './billing/usage';
+import type { User } from '@supabase/supabase-js';
 
 // Re-export types for backward compatibility
 export type { JobRow, JobStatus, Visibility, PublishMode, PublishSource, MetaPlatform, MetaSource, AutoUploadStatusMsg } from './types';
@@ -82,6 +91,32 @@ type AutoUploadStatusMsg = {
   status: JobStatus;
   message?: string;
 };
+
+type BillingGateReason = 'sign_in' | 'not_subscribed' | 'limit_exceeded';
+type LimitDialogState = {
+  open: boolean;
+  kind: 'metadata' | 'upload';
+  snapshot: UsageSnapshot | null;
+};
+
+type EntitlementRow = {
+  plan: string;
+  status: string;
+  trial_ends_at?: string | null;
+  trial_used?: boolean | null;
+};
+
+type SubscriptionRow = {
+  id: string;
+  customer_id?: string | null;
+  status?: string | null;
+  current_period_end?: string | number | null;
+  cancel_at_period_end?: boolean | null;
+  ended_at?: string | number | null;
+};
+
+const PRICING_URL = 'https://clip-cast-murex.vercel.app/pricing';
+const BILLING_URL = 'https://clip-cast-murex.vercel.app/account';
 
 const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF]/g;
 const HASHTAG_TOKEN_RE = /#([^\s#]+)/gu;
@@ -213,6 +248,31 @@ export default function App() {
 
   const [dark, setDark] = React.useState<boolean>(() => localStorage.getItem('theme') === 'dark');
   const [uiLanguage, setUiLanguage] = React.useState<string>('en');
+  const [authDeepLinkUrl, setAuthDeepLinkUrl] = React.useState<string | null>(null);
+  const [supabaseUser, setSupabaseUser] = React.useState<User | null>(null);
+  const [entitlement, setEntitlement] = React.useState<EntitlementRow | null>(null);
+  const [subscriptionInfo, setSubscriptionInfo] = React.useState<SubscriptionRow | null>(null);
+  const [authEntitlement, setAuthEntitlement] =
+    React.useState<AuthEntitlementSnapshot>(INITIAL_AUTH_ENTITLEMENT);
+  const [entitlementLoading, setEntitlementLoading] = React.useState(false);
+  const lastProcessedDeepLinkRef = React.useRef<{ url: string; ts: number } | null>(null);
+  const planAccess = React.useMemo(
+    () => ({
+      isActive: authEntitlement.isActive,
+      isSignedIn: authEntitlement.isSignedIn,
+      planName: authEntitlement.planName,
+      renewsOn: authEntitlement.renewsOn,
+    }),
+    [authEntitlement.isActive, authEntitlement.isSignedIn, authEntitlement.planName, authEntitlement.renewsOn],
+  );
+  const [usageSnapshot, setUsageSnapshot] = React.useState<UsageSnapshot | null>(null);
+  const [usageLoading, setUsageLoading] = React.useState(false);
+  const [billingGateReason, setBillingGateReason] = React.useState<BillingGateReason | null>(null);
+  const [limitDialog, setLimitDialog] = React.useState<LimitDialogState>({
+    open: false,
+    kind: 'metadata',
+    snapshot: null,
+  });
 
   React.useEffect(() => {
     const loadUiLanguage = async () => {
@@ -1087,6 +1147,98 @@ export default function App() {
   /** File paths for which metadata generation is currently running or queued (single-flight per file). */
   const [metadataGenerationBusyPaths, setMetadataGenerationBusyPaths] = React.useState<ReadonlySet<string>>(new Set());
   const [snack, setSnack] = React.useState<string | null>(null);
+  const ensureSignedIn = React.useCallback((): boolean => {
+    if (planAccess.isSignedIn) return true;
+    setBillingGateReason('sign_in');
+    return false;
+  }, [planAccess.isSignedIn]);
+  const extractBillingErrorText = React.useCallback((err: unknown): string => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    if (err && typeof err === 'object') {
+      const candidate = err as {
+        message?: unknown;
+        details?: unknown;
+        hint?: unknown;
+        code?: unknown;
+        status?: unknown;
+      };
+      const parts: string[] = [];
+      for (const value of [candidate.message, candidate.details, candidate.hint, candidate.code, candidate.status]) {
+        if (typeof value === 'string' && value.trim()) {
+          parts.push(value);
+        } else if (typeof value === 'number' && Number.isFinite(value)) {
+          parts.push(String(value));
+        }
+      }
+      if (parts.length > 0) return parts.join(' | ');
+    }
+    return String(err);
+  }, []);
+  const handleLimitExceeded = React.useCallback(async (kind: 'metadata' | 'upload') => {
+    setSnack('Limit reached. Upgrade to continue.');
+    try {
+      const snapshot = await getUsageSnapshot();
+      setUsageSnapshot(snapshot);
+      setLimitDialog({ open: true, kind, snapshot });
+    } catch {
+      setLimitDialog({ open: true, kind, snapshot: null });
+    }
+  }, [setSnack]);
+  const handleBillingError = React.useCallback((err: unknown, kind?: 'metadata' | 'upload'): boolean => {
+    const message = extractBillingErrorText(err);
+    const normalized = message.toLowerCase();
+    if (normalized.includes('not_subscribed')) {
+      setBillingGateReason('not_subscribed');
+      return true;
+    }
+    if (normalized.includes('limit_exceeded') || normalized.includes('limit_reached')) {
+      if (kind) {
+        void handleLimitExceeded(kind);
+      } else {
+        setBillingGateReason('limit_exceeded');
+      }
+      return true;
+    }
+    setSnack('Billing check failed. Try again.');
+    return false;
+  }, [extractBillingErrorText, handleLimitExceeded, setSnack]);
+  const refreshUsageSnapshot = React.useCallback(async () => {
+    if (!planAccess.isSignedIn) {
+      setUsageSnapshot(null);
+      setUsageLoading(false);
+      return;
+    }
+    setUsageLoading(true);
+    try {
+      const snapshot = await getUsageSnapshot();
+      setUsageSnapshot(snapshot);
+    } catch (err) {
+      const message = extractBillingErrorText(err);
+      const normalized = message.toLowerCase();
+      if (!normalized.includes('not_subscribed') && !normalized.includes('not_authenticated')) {
+        setSnack('Billing check failed. Try again.');
+      }
+      setUsageSnapshot(null);
+    } finally {
+      setUsageLoading(false);
+    }
+  }, [extractBillingErrorText, planAccess.isSignedIn, setSnack]);
+  const guardUploadAndScheduleAccess = React.useCallback((): boolean => {
+    if (!ensureSignedIn()) return false;
+    if (planAccess.isActive) return true;
+    setBillingGateReason('not_subscribed');
+    return false;
+  }, [ensureSignedIn, planAccess.isActive]);
+  React.useEffect(() => {
+    if (!accountDialogOpen) return;
+    void refreshUsageSnapshot();
+  }, [accountDialogOpen, refreshUsageSnapshot]);
+  React.useEffect(() => {
+    if (planAccess.isSignedIn) return;
+    setUsageSnapshot(null);
+    setUsageLoading(false);
+  }, [planAccess.isSignedIn]);
   const [isDragging, setIsDragging] = React.useState(false);
   const [rowDragId, setRowDragId] = React.useState<string | null>(null);
   const [rowDragOverId, setRowDragOverId] = React.useState<string | null>(null);
@@ -1818,6 +1970,7 @@ export default function App() {
 
   // Open schedule dialog for a specific platform
   const openScheduleDialog = React.useCallback((row: JobRow, platform: MetaPlatform) => {
+    if (!guardUploadAndScheduleAccess()) return;
     setScheduleDialogRow(row);
     setScheduleDialogPlatform(platform);
     setScheduleDialogMode('later');
@@ -1839,7 +1992,7 @@ export default function App() {
 
     setScheduleDialogDateTime(toDateTimeLocalValue(msToShow, getIanaTimeZone(timeZoneId)));
     setScheduleDialogOpen(true);
-  }, [timeZoneId, scheduledJobs]);
+  }, [guardUploadAndScheduleAccess, timeZoneId, scheduledJobs]);
 
   // `autoEnabled` is declared later in this component; use a ref here to avoid TDZ.
   const autoEnabledRef = React.useRef<boolean>(true);
@@ -2283,6 +2436,7 @@ export default function App() {
   // Handle schedule dialog actions
   const handleScheduleDialogSubmit = React.useCallback(async () => {
     if (!scheduleDialogRow || !scheduleDialogPlatform) return;
+    if (!guardUploadAndScheduleAccess()) return;
 
     // Save to history before any schedule action
     await saveToHistory();
@@ -2401,6 +2555,15 @@ export default function App() {
           const connected = await window.api?.youtubeIsConnected?.();
           if (!connected?.connected) {
             setSnack(t('youtubeNotConnectedPrompt'));
+            setScheduleDialogOpen(false);
+            return;
+          }
+
+          try {
+            const snapshot = await consumeUpload(1);
+            setUsageSnapshot(snapshot);
+          } catch (err) {
+            handleBillingError(err, 'upload');
             setScheduleDialogOpen(false);
             return;
           }
@@ -2665,7 +2828,23 @@ export default function App() {
     setScheduleDialogOpen(false);
     setScheduleDialogRow(null);
     setScheduleDialogPlatform(null);
-  }, [scheduleDialogRow, scheduleDialogPlatform, scheduleDialogMode, scheduleDialogDateTime, timeZoneId, copyToClipboard, saveToHistory, updateTargetsForRow, formatForGrid, getIanaTimeZone, upsertJobRunForPlatform, platformLabels, t]);
+  }, [
+    scheduleDialogRow,
+    scheduleDialogPlatform,
+    scheduleDialogMode,
+    scheduleDialogDateTime,
+    timeZoneId,
+    copyToClipboard,
+    saveToHistory,
+    updateTargetsForRow,
+    formatForGrid,
+    getIanaTimeZone,
+    upsertJobRunForPlatform,
+    platformLabels,
+    guardUploadAndScheduleAccess,
+    handleBillingError,
+    t,
+  ]);
 
 
   // Fingerprint only the scheduling-related fields so we can react to changes
@@ -3936,6 +4115,150 @@ React.useEffect(() => {
     });
     return () => off?.();
   }, [handlePipelineFileDone]);
+
+  const loadAuthAndEntitlement = React.useCallback(async () => {
+    const supabase = getSupabase();
+    setEntitlementLoading(true);
+    try {
+      const snapshot = await loadAuthAndEntitlementState(supabase);
+      setAuthEntitlement(snapshot);
+      setSupabaseUser(snapshot.user);
+      setEntitlement(snapshot.entitlement as EntitlementRow | null);
+      setSubscriptionInfo(snapshot.subscription as SubscriptionRow | null);
+      return snapshot;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[auth] load auth+entitlement failed:', message);
+      setAuthEntitlement({
+        ...INITIAL_AUTH_ENTITLEMENT,
+        authState: 'signedOut',
+      });
+      setSupabaseUser(null);
+      setEntitlement(null);
+      setSubscriptionInfo(null);
+      return {
+        ...INITIAL_AUTH_ENTITLEMENT,
+        authState: 'signedOut' as const,
+      };
+    } finally {
+      setEntitlementLoading(false);
+    }
+  }, []);
+
+  // Deep link: parse callback URL, exchange code or setSession, update auth state, close Account modal, toast
+  const handleAuthDeepLink = React.useCallback(async (url: string) => {
+    if (!url) return;
+    const now = Date.now();
+    const last = lastProcessedDeepLinkRef.current;
+    if (last && last.url === url && now - last.ts < 2000) {
+      console.log('[auth] duplicate deep link ignored');
+      return;
+    }
+    lastProcessedDeepLinkRef.current = { url, ts: now };
+
+    setAuthDeepLinkUrl(url);
+
+    const { merged } = parseParamsFromUrl(url);
+    const hasCode = Boolean(merged.code);
+    const hasAccessToken = Boolean(merged.access_token);
+    const hasRefreshToken = Boolean(merged.refresh_token);
+    console.log('[auth] parsed params', {
+      hasCode,
+      hasAccessToken,
+      hasRefreshToken,
+      paramKeys: Object.keys(merged),
+    });
+
+    const supabase = getSupabase();
+    if (!supabase) {
+      setSnack(t('authNotConfigured'));
+      window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
+      return;
+    }
+
+    let branch: 'exchangeCodeForSession' | 'setSession' | 'missing';
+    try {
+      if (hasCode) {
+        branch = 'exchangeCodeForSession';
+        const { error } = await supabase.auth.exchangeCodeForSession(merged.code!);
+        if (error) throw error;
+        console.log('[auth] exchangeCodeForSession success');
+      } else if (hasAccessToken && hasRefreshToken) {
+        branch = 'setSession';
+        const { error } = await supabase.auth.setSession({
+          access_token: merged.access_token!,
+          refresh_token: merged.refresh_token!,
+        });
+        if (error) throw error;
+        console.log('[auth] setSession success');
+      } else {
+        branch = 'missing';
+        console.log('[auth] branch used', branch);
+        setSnack(t('authCallbackMissingCodeOrTokens'));
+        window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
+        return;
+      }
+
+      console.log('[auth] branch used', branch);
+      const snapshot = await loadAuthAndEntitlement();
+      setSnack(snapshot.user?.email ? t('signedInAs', { email: snapshot.user.email }) : t('authSignedInSuccess'));
+      console.log('[auth] session exists', Boolean(snapshot.user), 'user email:', snapshot.user?.email ?? '—');
+
+      setAccountDialogOpen(false);
+      setAuthDeepLinkUrl(null);
+      console.log('[auth] modal closed');
+      window.dispatchEvent(new CustomEvent('auth:signed-in'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[auth] finalize failed:', message);
+      setSnack(t('authExchangeFailed', { message }));
+      window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
+    }
+  }, [loadAuthAndEntitlement, t]);
+
+  React.useEffect(() => {
+    const onDeepLink = (e: Event) => {
+      const url = (e as CustomEvent<string>).detail;
+      void handleAuthDeepLink(url);
+    };
+    window.addEventListener('clipcast-deep-link', onDeepLink);
+    return () => window.removeEventListener('clipcast-deep-link', onDeepLink);
+  }, [handleAuthDeepLink]);
+
+  // Load existing session on mount + onAuthStateChange so UI reacts to SIGNED_IN / TOKEN_REFRESHED / SIGNED_OUT
+  React.useEffect(() => {
+    const supabase = getSupabase();
+    if (!supabase) return;
+    void loadAuthAndEntitlement();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      void loadAuthAndEntitlement();
+    });
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadAuthAndEntitlement]);
+
+  const handleOpenExternal = React.useCallback(
+    async (url: string) => {
+      const opener = window.clipcast?.openExternal ?? window.api?.openExternal;
+      if (!opener) {
+        setSnack(t('signInNotConfigured'));
+        return;
+      }
+      const result = await opener(url);
+      if (result?.ok !== true && result?.error) {
+        setSnack(result.error ?? t('signInError', { message: 'Failed to open browser' }));
+      }
+    },
+    [setSnack, t],
+  );
+
+  const handleUpgrade = React.useCallback(() => {
+    void handleOpenExternal(PRICING_URL);
+  }, [handleOpenExternal]);
+  const handleManageBilling = React.useCallback(() => {
+    void handleOpenExternal(BILLING_URL);
+  }, [handleOpenExternal]);
 
   // Remove videos function (supports single or bulk)
   const removeVideos = React.useCallback(
@@ -5230,6 +5553,7 @@ React.useEffect(() => {
               <Button
                 size="small"
                 variant="outlined"
+                disabled={!planAccess.isActive}
                 onClick={(e) => {
                   e.stopPropagation();
                   openScheduleDialog(params.row, 'youtube');
@@ -5283,7 +5607,7 @@ React.useEffect(() => {
                 size="small"
                 variant="outlined"
                 color={getButtonColor() as any}
-                disabled={platformStatus.status === 'processing'}
+                disabled={platformStatus.status === 'processing' || (!planAccess.isActive && platformStatus.status !== 'done')}
                 onClick={async (e) => {
                   e.stopPropagation();
                   if (platformStatus.status === 'done') {
@@ -5324,6 +5648,7 @@ React.useEffect(() => {
               <Button
                 size="small"
                 variant="outlined"
+                disabled={!planAccess.isActive}
                 onClick={(e) => {
                   e.stopPropagation();
                   openScheduleDialog(params.row, 'instagram');
@@ -5376,7 +5701,7 @@ React.useEffect(() => {
                 size="small"
                 variant="outlined"
                 color={getButtonColor() as any}
-                disabled={platformStatus.status === 'processing'}
+                disabled={platformStatus.status === 'processing' || (!planAccess.isActive && platformStatus.status !== 'done')}
                 onClick={async (e) => {
                   e.stopPropagation();
                   if (platformStatus.status === 'done') {
@@ -5417,6 +5742,7 @@ React.useEffect(() => {
               <Button
                 size="small"
                 variant="outlined"
+                disabled={!planAccess.isActive}
                 onClick={(e) => {
                   e.stopPropagation();
                   openScheduleDialog(params.row, 'tiktok');
@@ -5469,7 +5795,7 @@ React.useEffect(() => {
                 size="small"
                 variant="outlined"
                 color={getButtonColor() as any}
-                disabled={platformStatus.status === 'processing'}
+                disabled={platformStatus.status === 'processing' || (!planAccess.isActive && platformStatus.status !== 'done')}
                 onClick={async (e) => {
                   e.stopPropagation();
                   if (platformStatus.status === 'done') {
@@ -5499,7 +5825,7 @@ React.useEffect(() => {
     // Only include values that affect column structure (not content rendering)
     // Include columnWidths to apply saved widths
     // Include jobsLoadedVersion so grid re-renders when jobs are (re)loaded (e.g. after reopen from tray)
-    [timeZoneId, systemTz, t, sortOrder, searchQuery, dark, columnWidths, jobsLoadedVersion],
+    [timeZoneId, systemTz, t, sortOrder, searchQuery, dark, columnWidths, jobsLoadedVersion, planAccess.isActive],
   );
   
   // Track columns reference to detect recreation (for debugging if needed)
@@ -6755,6 +7081,7 @@ const add = async () => {
 
   const generateMetadata = async (specificRows?: JobRow[], platformsToGenerate?: ('youtube' | 'instagram' | 'tiktok')[]) => {
     if (!window.api?.runPipeline) return;
+    if (!ensureSignedIn()) return;
     const rowsArray = Array.from(rowsById.values());
     if (rowsArray.length === 0) return;
 
@@ -6934,6 +7261,14 @@ const add = async () => {
       } else {
         setSnack(t('generatingMetadataForFiles', { count: toProcess.length }));
       }
+    }
+
+    try {
+      const snapshot = await consumeMetadata(toProcess.length);
+      setUsageSnapshot(snapshot);
+    } catch (err) {
+      handleBillingError(err, 'metadata');
+      return;
     }
 
     const paths = toProcess.map((t) => t.filePath);
@@ -7143,6 +7478,7 @@ const add = async () => {
     target: JobRow[],
     opts: { generateMetadata: boolean; youtube: boolean; instagram: boolean; tiktok: boolean },
   ) => {
+    if (!guardUploadAndScheduleAccess()) return;
     if (!target.length) {
       setSnack(t('selectAtLeastOneVideoFile'));
       return;
@@ -7175,18 +7511,27 @@ const add = async () => {
     const anyYouTubeToDo = opts.youtube && target.some((r) => !isDoneOnPlatform(r, 'youtube'));
     if (anyYouTubeToDo && !hasError) {
       try {
+        const uploadTargets = target.filter((r) => !isDoneOnPlatform(r, 'youtube'));
+        ytSkippedDone += Math.max(0, target.length - uploadTargets.length);
         // Check if YouTube is connected
         const connected = await window.api?.youtubeIsConnected?.();
         if (!connected?.connected) {
           setSnack(t('youtubeNotConnectedPrompt'));
           hasError = true;
         } else {
+          try {
+            const snapshot = await consumeUpload(uploadTargets.length);
+            setUsageSnapshot(snapshot);
+          } catch (err) {
+            handleBillingError(err, 'upload');
+            return;
+          }
           // Upload each selected video
           let successCount = 0;
           let failCount = 0;
           let sawLimitError = false;
           
-          for (const row of target) {
+          for (const row of uploadTargets) {
             try {
               if (isDoneOnPlatform(row, 'youtube')) {
                 ytSkippedDone += 1;
@@ -7373,7 +7718,17 @@ const add = async () => {
       const base = t('operationsCompleted');
       setSnack(skippedParts.length ? `${base}. ${skippedParts.join(' • ')}` : base);
     }
-  }, [generateMetadata, getJobsForRow, loadJobs, setScheduledJobs, t, updateRow, upsertJobRunForPlatform]);
+  }, [
+    generateMetadata,
+    getJobsForRow,
+    guardUploadAndScheduleAccess,
+    handleBillingError,
+    loadJobs,
+    setScheduledJobs,
+    t,
+    updateRow,
+    upsertJobRunForPlatform,
+  ]);
 
   const resolveAutoScheduleCollisions = (allRows: JobRow[]) => {
     // If a user manually occupies a slot that an AUTO row used,
@@ -7556,9 +7911,84 @@ const add = async () => {
     );
   }
 
+  const showSignInBanner = !entitlementLoading && !planAccess.isSignedIn;
+  const showUpgradeBanner = !entitlementLoading && planAccess.isSignedIn && !planAccess.isActive;
+  const canManageBilling = Boolean(subscriptionInfo?.customer_id || subscriptionInfo?.id);
+  const limitSnapshot = limitDialog.snapshot ?? usageSnapshot;
+  const limitUsed = limitDialog.kind === 'metadata'
+    ? (limitSnapshot?.metadata_used ?? 0)
+    : (limitSnapshot?.uploads_used ?? 0);
+  const limitCap = limitDialog.kind === 'metadata'
+    ? (limitSnapshot?.metadata_limit ?? null)
+    : (limitSnapshot?.uploads_limit ?? null);
+  const limitCapLabel = limitCap == null ? 'Unlimited' : String(limitCap);
+  const limitTitle = limitDialog.kind === 'metadata' ? 'Metadata limit reached' : 'Upload limit reached';
+  const billingGateTitle = billingGateReason === 'sign_in'
+    ? 'Sign in required'
+    : billingGateReason === 'not_subscribed'
+    ? 'No active plan'
+    : billingGateReason === 'limit_exceeded'
+    ? 'Limit reached'
+    : '';
+  const billingGateBody = billingGateReason === 'sign_in'
+    ? 'Please sign in to continue.'
+    : billingGateReason === 'not_subscribed'
+    ? 'No active plan. Please subscribe or upgrade to continue.'
+    : billingGateReason === 'limit_exceeded'
+    ? 'Limit reached for this billing period. Upgrade to continue.'
+    : '';
+  const billingGateActionLabel = billingGateReason === 'sign_in' ? 'Sign in' : 'Upgrade';
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      {showSignInBanner && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: authDeepLinkUrl ? 56 : 12,
+            left: 12,
+            right: 12,
+            zIndex: 9997,
+          }}
+        >
+          <Alert
+            severity="info"
+            action={
+              <Button color="inherit" size="small" onClick={() => setAccountDialogOpen(true)}>
+                {t('signInWithGoogle')}
+              </Button>
+            }
+          >
+            {t('signInToEnableUploadSchedule')}
+          </Alert>
+        </Box>
+      )}
+      {showUpgradeBanner && (
+        <Box
+          sx={{
+            position: 'fixed',
+            bottom: authDeepLinkUrl ? 56 : showSignInBanner ? 72 : 12,
+            left: 12,
+            right: 12,
+            zIndex: 9997,
+          }}
+        >
+          <Alert
+            severity="info"
+            action={
+              <Button color="inherit" size="small" onClick={handleUpgrade}>
+                {t('upgrade')}
+              </Button>
+            }
+          >
+            {t('upgradeRequiredForUploadScheduleBanner', {
+              plan: planAccess.planName,
+              renewsOn: planAccess.renewsOn ?? '—',
+            })}
+          </Alert>
+        </Box>
+      )}
       <Box
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
@@ -7643,8 +8073,15 @@ const add = async () => {
         {interfaceSettings.commandBarPosition === 'top' && (
           <CommandBar
             onAddClick={() => setAddDialogOpen(true)}
-            onPlanClick={() => setPlannerOpen(true)}
-            onPublishClick={() => setPublishDialogOpen(true)}
+            onPlanClick={() => {
+              if (!guardUploadAndScheduleAccess()) return;
+              setPlannerOpen(true);
+            }}
+            onPublishClick={() => {
+              if (!guardUploadAndScheduleAccess()) return;
+              setPublishDialogOpen(true);
+            }}
+            disablePlanAndPublish={!planAccess.isActive}
             youtubeConnected={ytConnected}
             queueCount={Array.from(rowsById.values()).filter(r => r.status === 'Processing').length}
             onInterfaceClick={() => setInterfaceDialogOpen(true)}
@@ -7723,6 +8160,7 @@ const add = async () => {
             }
           }}
           onApply={async (plan) => {
+            if (!guardUploadAndScheduleAccess()) return;
             // Check if videos are selected (like PublishDialog)
             if (selectedIds.length === 0) {
               setSnack(t('selectAtLeastOneVideo'));
@@ -7962,7 +8400,87 @@ const add = async () => {
           open={accountDialogOpen}
           onClose={() => setAccountDialogOpen(false)}
           onSnack={setSnack}
+          supabaseUser={supabaseUser}
+          entitlement={entitlement ?? (supabaseUser ? { plan: 'try_free', status: 'inactive' } : null)}
+          subscription={subscriptionInfo}
+          usageSnapshot={usageSnapshot}
+          usageLoading={usageLoading}
+          onSignOut={() => {
+            setAuthEntitlement({
+              ...INITIAL_AUTH_ENTITLEMENT,
+              authState: 'signedOut',
+            });
+            setSupabaseUser(null);
+            setEntitlement(null);
+            setSubscriptionInfo(null);
+            setUsageSnapshot(null);
+            setUsageLoading(false);
+          }}
         />
+
+        <Dialog
+          open={Boolean(billingGateReason)}
+          onClose={() => setBillingGateReason(null)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>{billingGateTitle}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {billingGateBody}
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setBillingGateReason(null)} variant="outlined">
+              Close
+            </Button>
+            {billingGateReason && (
+              <Button
+                variant="contained"
+                onClick={() => {
+                  setBillingGateReason(null);
+                  if (billingGateReason === 'sign_in') {
+                    setAccountDialogOpen(true);
+                  } else {
+                    handleUpgrade();
+                  }
+                }}
+              >
+                {billingGateActionLabel}
+              </Button>
+            )}
+          </DialogActions>
+        </Dialog>
+
+        <Dialog
+          open={limitDialog.open}
+          onClose={() => setLimitDialog((prev) => ({ ...prev, open: false }))}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>{limitTitle}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              You have used {limitUsed} of {limitCapLabel} this period.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Upgrade to continue.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            {canManageBilling && (
+              <Button variant="outlined" onClick={handleManageBilling}>
+                Manage billing
+              </Button>
+            )}
+            <Button onClick={() => setLimitDialog((prev) => ({ ...prev, open: false }))}>
+              Close
+            </Button>
+            <Button variant="contained" onClick={handleUpgrade}>
+              Upgrade
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Diagnostics Dialog */}
         <DiagnosticsDialog
@@ -9564,9 +10082,25 @@ const add = async () => {
                                 disabled={!hasSelection}
                                 onClick={async () => {
                                   // Retry upload for selected failed items
+                                  if (!guardUploadAndScheduleAccess()) return;
                                   const failedSelectedRows = sortedRows.filter(
                                     row => selectedIds.includes(row.id) && getRowStatus(row) === 'failed'
                                   );
+                                  const youtubeRetries = failedSelectedRows.filter((row) => {
+                                    const targets = row.targets || { youtube: false, instagram: false, tiktok: false };
+                                    if (!targets.youtube) return false;
+                                    const platformStatus = getPlatformStatus(row, 'youtube');
+                                    return platformStatus.status === 'failed';
+                                  });
+                                  if (youtubeRetries.length > 0) {
+                                    try {
+                                      const snapshot = await consumeUpload(youtubeRetries.length);
+                                      setUsageSnapshot(snapshot);
+                                    } catch (err) {
+                                      handleBillingError(err, 'upload');
+                                      return;
+                                    }
+                                  }
                                   for (const row of failedSelectedRows) {
                                     const targets = row.targets || { youtube: false, instagram: false, tiktok: false };
                                     // Check which platforms failed
@@ -10618,6 +11152,14 @@ const add = async () => {
                             disabled={!ytConnected}
                             onClick={async () => {
                             if (!selectedRow) return;
+                            if (!guardUploadAndScheduleAccess()) return;
+                            try {
+                              const snapshot = await consumeUpload(1);
+                              setUsageSnapshot(snapshot);
+                            } catch (err) {
+                              handleBillingError(err, 'upload');
+                              return;
+                            }
                             const publishAtUtcMs =
                               selectedRow.publishMode === 'schedule' && typeof selectedRow.publishAt === 'number'
                                 ? selectedRow.publishAt
@@ -11202,8 +11744,15 @@ const add = async () => {
         {interfaceSettings.commandBarPosition === 'bottom' && (
           <CommandBar
             onAddClick={() => setAddDialogOpen(true)}
-            onPlanClick={() => setPlannerOpen(true)}
-            onPublishClick={() => setPublishDialogOpen(true)}
+            onPlanClick={() => {
+              if (!guardUploadAndScheduleAccess()) return;
+              setPlannerOpen(true);
+            }}
+            onPublishClick={() => {
+              if (!guardUploadAndScheduleAccess()) return;
+              setPublishDialogOpen(true);
+            }}
+            disablePlanAndPublish={!planAccess.isActive}
             youtubeConnected={ytConnected}
             queueCount={Array.from(rowsById.values()).filter(r => r.status === 'Processing').length}
             onInterfaceClick={() => setInterfaceDialogOpen(true)}

@@ -13,6 +13,8 @@ const __dirname = path.dirname(__filename);
 // project root (one level above electron/)
 const APP_ROOT = path.join(__dirname, '..');
 
+const PROTOCOL_SCHEME = 'clipcast';
+
 let mainWindow = null;
 let tray = null;
 let assistCenterWindow = null;
@@ -25,6 +27,102 @@ let batchNotificationTimer = null;
 let lastNotificationCount = { total: 0, instagram: 0, tiktok: 0 };
 let lastNotificationTime = 0;
 let ipcHandlersInitialized = false;
+let pendingDeepLinkUrl = null;
+
+function getDeepLinkFromArgv(argv) {
+  if (!Array.isArray(argv)) return null;
+  const found = argv.find((arg) => typeof arg === 'string' && arg.startsWith(`${PROTOCOL_SCHEME}://`));
+  return found || null;
+}
+
+function sendPendingDeepLinkToRenderer() {
+  if (!pendingDeepLinkUrl) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('auth:deep-link', pendingDeepLinkUrl);
+    mainWindow.webContents.send('auth:callback', pendingDeepLinkUrl);
+    console.log('[deep-link] sent pending to renderer (auth:callback)');
+    pendingDeepLinkUrl = null;
+  } catch {
+    // ignore
+  }
+}
+
+function focusWindowAndSendDeepLink(url) {
+  console.log('[deep-link] received:', url);
+  pendingDeepLinkUrl = url;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    try {
+      mainWindow.webContents.send('auth:deep-link', url);
+      mainWindow.webContents.send('auth:callback', url);
+      console.log('[deep-link] sent to renderer (auth:callback)');
+    } catch {
+      // ignore
+    }
+    pendingDeepLinkUrl = null;
+  }
+}
+
+function registerDeepLinkFallback(win) {
+  if (!win || !win.webContents) return;
+  const trySend = () => {
+    if (!pendingDeepLinkUrl) return;
+    try {
+      win.webContents.send('auth:deep-link', pendingDeepLinkUrl);
+      win.webContents.send('auth:callback', pendingDeepLinkUrl);
+      console.log('[deep-link] sent pending to renderer (auth:callback)');
+      pendingDeepLinkUrl = null;
+    } catch {
+      // ignore
+    }
+  };
+  win.webContents.once('did-finish-load', trySend);
+  win.webContents.once('dom-ready', trySend);
+}
+
+// Single instance + protocol registration
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+}
+
+if (app.isPackaged) {
+  // Packaged app: executable is the installed ClipCast.exe
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+} else if (process.platform === 'win32') {
+  // Dev on Windows: Electron is launched via `electron .`, so we must pass
+  // the executable AND the entry argument to register the protocol correctly.
+  const exePath = process.execPath;
+  const entry = process.argv[1] ? path.resolve(process.argv[1]) : APP_ROOT;
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, exePath, [entry]);
+} else {
+  // Other dev platforms can use the simple form
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+}
+
+app.on('second-instance', (_event, argv) => {
+  const url = getDeepLinkFromArgv(argv);
+  if (url) {
+    focusWindowAndSendDeepLink(url);
+  } else if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
+if (process.platform === 'darwin') {
+  app.on('open-url', (event, url) => {
+    event.preventDefault();
+    if (url && url.startsWith(`${PROTOCOL_SCHEME}://`)) {
+      focusWindowAndSendDeepLink(url);
+    }
+  });
+}
 
 function safeMkdir(p) {
   try {
@@ -1551,6 +1649,16 @@ async function initIpcHandlers() {
     }
   });
 
+  // Auth: open OAuth URL in external browser (Supabase/Google login)
+  ipcMain.handle('auth:openExternal', async (_evt, url) => {
+    try {
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: String(e) };
+    }
+  });
+
   // Assist Center handlers
   const DUE_NOW_TOLERANCE_MIN = 10; // 10 minutes tolerance window
   
@@ -1809,6 +1917,12 @@ async function initIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
+  // Capture any deep link passed on first launch
+  const initialDeepLink = getDeepLinkFromArgv(process.argv);
+  if (initialDeepLink) {
+    pendingDeepLinkUrl = initialDeepLink;
+  }
+
   // Register IPC handlers FIRST (before window creation)
   await initIpcHandlers();
 
@@ -1819,6 +1933,9 @@ app.whenReady().then(async () => {
     mainWindow = null;
     console.log('[main] Main window closed');
   });
+
+  // Fallback: deliver pending deep link on did-finish-load and dom-ready so renderer always receives it
+  registerDeepLinkFallback(mainWindow);
 
   // Wire window references for event emission
   setAutoUploadWindowFn?.(mainWindow);
@@ -1881,6 +1998,7 @@ app.whenReady().then(async () => {
         mainWindow = null;
         console.log('[main] Main window closed');
       });
+      registerDeepLinkFallback(mainWindow);
       setAutoUploadWindowFn?.(mainWindow);
       assistOverlayWindow = await createAssistOverlayWindow();
       setAssistOverlayWindowFn?.(assistOverlayWindow);

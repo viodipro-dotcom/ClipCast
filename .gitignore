@@ -114,3 +114,7 @@ TODO_PERSONAL.md
 **/personal-notes/
 *.md
 **/*.md
+
+__pycache__/
+**/__pycache__/
+*.pyc

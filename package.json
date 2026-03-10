@@ -22,6 +22,7 @@
     "@mui/material": "^7.3.6",
     "@mui/x-data-grid": "^8.22.0",
     "@mui/x-date-pickers": "^7.3.6",
+    "@supabase/supabase-js": "^2.98.0",
     "date-fns": "^3.0.0",
     "googleapis": "^169.0.0",
     "i18next": "^25.8.0",
