@@ -13,13 +13,18 @@ import { useTranslation } from 'react-i18next';
 import type { User } from '@supabase/supabase-js';
 import { supabase as supabaseClient } from '../lib/supabase';
 import type { UsageSnapshot } from '../billing/usage';
+import type { NetworkStatus } from '../lib/networkStatus';
+import { isNetworkError } from '../lib/networkStatus';
 
 export interface AccountDialogProps {
   open: boolean;
   onClose: () => void;
   onSnack: (message: string) => void;
+  onRequireOnline?: () => boolean;
+  onNetworkError?: (err: unknown) => void;
   /** Current Supabase user when signed in via deep link / PKCE */
   supabaseUser?: User | null;
+  networkStatus?: NetworkStatus;
   entitlement?: {
     plan: string;
     status: string;
@@ -55,7 +60,10 @@ export default function AccountDialog({
   open,
   onClose,
   onSnack,
+  onRequireOnline,
+  onNetworkError,
   supabaseUser = null,
+  networkStatus = 'online',
   entitlement = null,
   subscription = null,
   usageSnapshot = null,
@@ -69,6 +77,11 @@ export default function AccountDialog({
   const handleSignOut = React.useCallback(async () => {
     if (supabaseClient) {
       await supabaseClient.auth.signOut();
+      try {
+        await window.api?.secretsClearYouTubeTokens?.();
+      } catch (e) {
+        console.error('Failed to clear YouTube tokens on sign-out:', e);
+      }
       onSignOut?.();
     }
   }, [onSignOut]);
@@ -129,12 +142,15 @@ export default function AccountDialog({
         onSnack(t('signInNotConfigured'));
         return;
       }
+      if (networkStatus === 'offline') {
+        onSnack('You are offline. The billing page may not load.');
+      }
       const result = await openExternal(url);
       if (result?.ok !== true && result?.error) {
         onSnack(result.error ?? t('signInError', { message: 'Failed to open browser' }));
       }
     },
-    [openExternal, onSnack, t],
+    [networkStatus, openExternal, onSnack, t],
   );
 
   const handleManageBilling = React.useCallback(() => {
@@ -163,6 +179,9 @@ export default function AccountDialog({
   }, []);
 
   const handleSignIn = React.useCallback(async () => {
+    if (onRequireOnline && !onRequireOnline()) {
+      return;
+    }
     if (!supabaseClient) {
       onSnack(t('authMissingEnv'));
       return;
@@ -178,6 +197,9 @@ export default function AccountDialog({
         },
       });
       if (error) {
+        if (isNetworkError(error)) {
+          onNetworkError?.(error);
+        }
         onSnack(t('signInError', { message: error.message }));
         return;
       }
@@ -193,10 +215,15 @@ export default function AccountDialog({
           onSnack(t('signInNotConfigured'));
         }
       }
+    } catch (err) {
+      if (isNetworkError(err)) {
+        onNetworkError?.(err);
+      }
+      onSnack(t('signInError', { message: String(err) }));
     } finally {
       setSignInLoading(false);
     }
-  }, [onSnack, t, openExternal]);
+  }, [onNetworkError, onRequireOnline, onSnack, openExternal, t]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>

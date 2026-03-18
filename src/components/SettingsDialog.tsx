@@ -77,7 +77,7 @@ export default function SettingsDialog({
                 size="small"
                 onClick={() =>
                   onUiScaleChange(
-                    Math.min(2.0, Math.max(1.0, Math.round((uiScale - 0.05) * 100) / 100))
+                    Math.min(2.0, Math.max(0.5, Math.round((uiScale - 0.05) * 100) / 100))
                   )
                 }
                 aria-label={t('uiSizeDecrease')}
@@ -91,7 +91,7 @@ export default function SettingsDialog({
                 size="small"
                 onClick={() =>
                   onUiScaleChange(
-                    Math.min(2.0, Math.max(1.0, Math.round((uiScale + 0.05) * 100) / 100))
+                    Math.min(2.0, Math.max(0.5, Math.round((uiScale + 0.05) * 100) / 100))
                   )
                 }
                 aria-label={t('uiSizeIncrease')}
@@ -101,21 +101,21 @@ export default function SettingsDialog({
             </Stack>
             <Slider
               size="small"
-              value={Math.min(200, Math.max(100, Math.round(uiScale * 100)))}
-              min={100}
+              value={Math.min(200, Math.max(50, Math.round(uiScale * 100)))}
+              min={50}
               max={200}
               step={5}
               onChange={(e, v) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const n = Array.isArray(v) ? v[0] : v;
-                onUiScaleChange(Math.min(2.0, Math.max(1.0, n / 100)));
+                onUiScaleChange(Math.min(2.0, Math.max(0.5, n / 100)));
               }}
               onChangeCommitted={(e, v) => {
                 e.preventDefault();
                 e.stopPropagation();
                 const n = Array.isArray(v) ? v[0] : v;
-                onUiScaleChange(Math.min(2.0, Math.max(1.0, n / 100)));
+                onUiScaleChange(Math.min(2.0, Math.max(0.5, n / 100)));
               }}
             />
           </FormControl>

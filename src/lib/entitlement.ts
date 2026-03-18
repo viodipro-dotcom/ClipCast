@@ -3,6 +3,12 @@ import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
 export const ENTITLEMENTS_TABLE = 'entitlements';
 export const SUBSCRIPTIONS_TABLE = 'subscriptions';
 
+/** Offline grace period: allow premium using cached entitlement for up to this long without a successful refresh. */
+export const OFFLINE_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** localStorage key for last successful entitlement check timestamp (signed-in user). */
+export const ENTITLEMENT_LAST_CHECK_AT_KEY = 'clipcast_entitlement_last_check_at';
+
 type EntitlementRow = {
   plan?: string | null;
   status?: string | null;

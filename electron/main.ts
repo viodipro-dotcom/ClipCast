@@ -162,6 +162,7 @@ function upsertJobFolder(state: DbState, folder: string) {
 }
 
 function createWindow() {
+  const isDev = !app.isPackaged;
   win = new BrowserWindow({
     icon: path.join(process.env.VITE_PUBLIC!, "electron-vite.svg"),
     webPreferences: {
@@ -169,11 +170,28 @@ function createWindow() {
     },
   });
 
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL);
+  const devUrl = process.env.VITE_DEV_SERVER_URL || VITE_DEV_SERVER_URL;
+
+  if (isDev && devUrl) {
+    win.loadURL(devUrl);
+    try {
+      win.webContents.openDevTools({ mode: "detach" });
+    } catch {
+      // ignore devtools failures
+    }
   } else {
     win.loadFile(path.join(RENDERER_DIST, "index.html"));
   }
+
+  win.webContents.on("did-fail-load", (...args) => {
+    console.error("[main] [did-fail-load]", ...args);
+  });
+  win.webContents.on("render-process-gone", (_event, details) => {
+    console.error("[main] [render-gone]", details);
+  });
+  win.webContents.on("crashed", () => {
+    console.error("[main] [renderer-crashed]");
+  });
 
   win.webContents.once("did-finish-load", () => {
     if (pendingDeepLink) {

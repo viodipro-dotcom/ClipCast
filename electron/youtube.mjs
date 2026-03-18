@@ -4,26 +4,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { google } from 'googleapis';
+import { getGoogleOAuthClient, getYouTubeTokens, redactSecrets, setYouTubeTokens } from './secrets.mjs';
 
 const { app, shell } = electron;
-
-function safeReadJson(p, fallback) {
-  try {
-    if (!fs.existsSync(p)) return fallback;
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
-  } catch {
-    return fallback;
-  }
-}
-
-function safeWriteJson(p, obj) {
-  try {
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, JSON.stringify(obj, null, 2), 'utf-8');
-  } catch {
-    // ignore
-  }
-}
 
 function appendLine(p, line) {
   try {
@@ -50,7 +33,27 @@ function parseTags(input) {
     .filter(Boolean);
 }
 
-export function loadClientCredentials() {
+let cachedTokens = null;
+let tokensLoaded = false;
+
+async function loadTokensFromKeytar() {
+  if (tokensLoaded) return cachedTokens;
+  cachedTokens = await getYouTubeTokens();
+  tokensLoaded = true;
+  return cachedTokens;
+}
+
+function setCachedTokens(tokens) {
+  cachedTokens = tokens;
+  tokensLoaded = true;
+}
+
+export function clearYouTubeTokensCache() {
+  cachedTokens = null;
+  tokensLoaded = false;
+}
+
+export async function loadClientCredentials() {
   const fromEnv = {
     clientId: process.env.GOOGLE_CLIENT_ID || process.env.YT_GOOGLE_CLIENT_ID || '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || process.env.YT_GOOGLE_CLIENT_SECRET || '',
@@ -62,42 +65,38 @@ export function loadClientCredentials() {
         'Invalid Client ID format. Expected format: numbers-letters.apps.googleusercontent.com',
       );
     }
-    return fromEnv;
+    return { ...fromEnv, source: 'env' };
   }
 
-  // Optional convenience: user can drop credentials into userData for local dev.
-  // File shape: { "clientId": "...", "clientSecret": "..." }
-  const p = path.join(app.getPath('userData'), 'google_oauth_client.json');
-  const j = safeReadJson(p, null);
-  const clientId = j?.clientId || j?.installed?.client_id || '';
-  const clientSecret = j?.clientSecret || j?.installed?.client_secret || '';
+  // TODO: migrate to PKCE installed-app flow to drop clientSecret requirement.
+  const stored = await getGoogleOAuthClient();
+  const clientId = stored?.clientId || '';
+  const clientSecret = stored?.clientSecret || '';
   if (clientId && clientSecret) {
     // Basic validation
     if (!clientId.includes('.apps.googleusercontent.com') && !clientId.includes('@')) {
       throw new Error(
-        `Invalid Client ID format in ${p}. Expected format: numbers-letters.apps.googleusercontent.com. Got: ${clientId.slice(0, 50)}...`,
+        `Invalid Client ID format. Expected format: numbers-letters.apps.googleusercontent.com. Got: ${clientId.slice(0, 50)}...`,
       );
     }
-    return { clientId, clientSecret };
+    return { clientId, clientSecret, source: 'keytar' };
+  }
+  if (clientId && !clientSecret) {
+    throw new Error('Missing Google OAuth client secret. Re-enter credentials in app settings.');
   }
 
   throw new Error(
-    'Missing Google OAuth credentials. Set env GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET or create userData/google_oauth_client.json',
+    'Missing Google OAuth credentials. Set env GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET or add them in app settings (stored in OS keychain).',
   );
 }
 
-export function getTokensPath() {
-  return path.join(app.getPath('userData'), 'youtube_tokens.json');
-}
-
-export function isConnected() {
-  const p = getTokensPath();
-  const tokens = safeReadJson(p, null);
+export async function isConnected() {
+  const tokens = await loadTokensFromKeytar();
   return Boolean(tokens && (tokens.refresh_token || tokens.access_token));
 }
 
-function createOAuthClient(redirectUri) {
-  const { clientId, clientSecret } = loadClientCredentials();
+async function createOAuthClient(redirectUri) {
+  const { clientId, clientSecret } = await loadClientCredentials();
   return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
 }
 
@@ -178,7 +177,7 @@ export async function connect({ log, outputsDir } = {}) {
   
   // Validate credentials before starting OAuth flow
   try {
-    const creds = loadClientCredentials();
+    const creds = await loadClientCredentials();
     writeLog(`Using Client ID: ${creds.clientId.slice(0, 30)}...`);
     if (!creds.clientId.includes('.apps.googleusercontent.com')) {
       throw new Error('Client ID format invalid. Must end with .apps.googleusercontent.com');
@@ -191,7 +190,7 @@ export async function connect({ log, outputsDir } = {}) {
 
   const { code, port, close } = await withLocalCallbackServer(async ({ port }) => {
     const redirectUri = `http://127.0.0.1:${port}/callback`;
-    const oauth2Client = createOAuthClient(redirectUri);
+    const oauth2Client = await createOAuthClient(redirectUri);
     const state = crypto.randomBytes(16).toString('hex');
     const authUrl = oauth2Client.generateAuthUrl({
       access_type: 'offline',
@@ -206,19 +205,21 @@ export async function connect({ log, outputsDir } = {}) {
 
   try {
     const redirectUri = `http://127.0.0.1:${port}/callback`;
-    const oauth2Client = createOAuthClient(redirectUri);
+    const oauth2Client = await createOAuthClient(redirectUri);
     writeLog('Exchanging code for tokens...');
     try {
       const { tokens } = await oauth2Client.getToken(code);
-      safeWriteJson(getTokensPath(), { ...tokens, obtainedAt: Date.now() });
-      writeLog('Tokens saved to userData/youtube_tokens.json');
+      const nextTokens = { ...tokens, obtainedAt: Date.now() };
+      await setYouTubeTokens(nextTokens);
+      setCachedTokens(nextTokens);
+      writeLog('Tokens saved to OS keychain');
       return { ok: true };
     } catch (e) {
-      const errMsg = String(e?.message || e || 'Unknown error');
+      const errMsg = redactSecrets(String(e?.message || e || 'Unknown error'));
       if (errMsg.includes('invalid_client') || errMsg.includes('401')) {
         throw new Error(
           'Invalid OAuth credentials (401: invalid_client). Please check:\n' +
-            '1. Client ID and Client Secret are correct in google_oauth_client.json\n' +
+            '1. Client ID and Client Secret are correct in app settings (stored in OS keychain) or environment\n' +
             '2. OAuth client type is "Desktop app" or "Other" (not Web application)\n' +
             '3. YouTube Data API v3 is enabled in Google Cloud Console\n' +
             '4. OAuth consent screen is configured and published (or you are added as a test user)',
@@ -240,9 +241,8 @@ export async function uploadVideo(payload, { log, appRoot, outputsDir } = {}) {
     appendLine(uploadLogPath, `${nowIso()} ${msg}\n`);
   };
 
-  const tokensPath = getTokensPath();
-  const tokens = safeReadJson(tokensPath, null);
-  if (!tokens) throw new Error('Not connected: youtube_tokens.json not found');
+  const tokens = await loadTokensFromKeytar();
+  if (!tokens) throw new Error('Not connected: YouTube tokens not found');
 
   const filePath = String(payload?.filePath || '');
   const title = String(payload?.title || '').trim();
@@ -267,7 +267,7 @@ export async function uploadVideo(payload, { log, appRoot, outputsDir } = {}) {
   }
 
   // Use the stored redirectUri if present; fallback to installed-app style (redirectUri not required for refresh).
-  const { clientId, clientSecret } = loadClientCredentials();
+  const { clientId, clientSecret } = await loadClientCredentials();
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret);
   oauth2Client.setCredentials(tokens);
 
@@ -278,28 +278,98 @@ export async function uploadVideo(payload, { log, appRoot, outputsDir } = {}) {
     writeLog(`Token refresh failed: ${String(e)}`);
     throw e;
   }
-  safeWriteJson(tokensPath, { ...oauth2Client.credentials, updatedAt: Date.now() });
+  const nextTokens = { ...oauth2Client.credentials, updatedAt: Date.now() };
+  await setYouTubeTokens(nextTokens);
+  setCachedTokens(nextTokens);
 
   const youtube = google.youtube({ version: 'v3', auth: oauth2Client });
 
   writeLog(`Uploading: ${path.basename(filePath)}`);
-  const res = await youtube.videos.insert({
-    part: ['snippet', 'status'],
-    requestBody: {
-      snippet: {
-        title,
-        description,
-        tags: tags.length ? tags : undefined,
+  try {
+    const res = await youtube.videos.insert({
+      part: ['snippet', 'status'],
+      requestBody: {
+        snippet: {
+          title,
+          description,
+          tags: tags.length ? tags : undefined,
+        },
+        status,
       },
-      status,
-    },
-    media: {
-      body: fs.createReadStream(filePath),
-    },
-  });
+      media: {
+        body: fs.createReadStream(filePath),
+      },
+    });
 
-  const videoId = res?.data?.id || '';
-  writeLog(`Upload done. videoId=${videoId || '(unknown)'}`);
-  return { ok: true, videoId, data: res?.data || null };
+    const videoId = res?.data?.id || '';
+    writeLog(`Upload done. videoId=${videoId || '(unknown)'}`);
+    return { ok: true, videoId, data: res?.data || null };
+  } catch (e) {
+    const normalized = normalizeYouTubeUploadError(e);
+    const message = normalized.message || String(e?.message ?? e);
+    if (isDailyUploadLimitError(normalized)) {
+      if (typeof log === 'function') {
+        log(`[youtube] daily upload limit detected; not charging credits; showing user message (reason=${normalized.reason || 'unknown'}, httpStatus=${normalized.httpStatus ?? 'n/a'})\n`);
+      }
+      appendLine(uploadLogPath, `${nowIso()} [youtube] daily upload limit detected; not charging credits; showing user message (reason=${normalized.reason || 'unknown'}, httpStatus=${normalized.httpStatus ?? 'n/a'})\n`);
+      return { ok: false, error: message, dailyUploadLimit: true };
+    }
+    return { ok: false, error: message };
+  }
+}
+
+/**
+ * Normalize YouTube API / Gaxios errors into a common shape for classification.
+ * @param {unknown} e - Caught error (often GaxiosError with response.data.error)
+ * @returns {{ code?: string, message: string, reason?: string, httpStatus?: number, raw?: unknown }}
+ */
+function normalizeYouTubeUploadError(e) {
+  const out = { code: undefined, message: '', reason: undefined, httpStatus: undefined, raw: e };
+  const err = e?.response?.data?.error || e?.errors?.[0] || e;
+  out.code = err?.code ?? e?.response?.status ?? err?.status;
+  out.httpStatus = Number(e?.response?.status ?? err?.code ?? err?.status);
+  if (Number.isNaN(out.httpStatus) && typeof err?.code === 'number') out.httpStatus = err.code;
+  const firstErr = Array.isArray(err?.errors) ? err.errors[0] : err;
+  out.reason = firstErr?.reason ?? firstErr?.domain ?? err?.reason;
+  const msg = firstErr?.message ?? err?.message ?? e?.message;
+  out.message = typeof msg === 'string' ? msg : String(e ?? 'Unknown error');
+  return out;
+}
+
+const DAILY_LIMIT_REASONS = new Set([
+  'uploadLimitExceeded',
+  'dailyLimitExceeded',
+  'youtubeSignupRequired',
+  'accountNotVerified',
+]);
+
+const DAILY_LIMIT_MESSAGE_SUBSTRINGS = [
+  'daily upload limit',
+  'upload limit',
+  'verify your account',
+  'phone verification',
+  'youtube verification',
+  'exceeded the number of videos',
+  'verification required',
+  'channel verification',
+];
+
+/**
+ * Classify whether the error is YouTube daily upload limit / verification required.
+ * Uses reason, httpStatus, and message substrings for robust matching.
+ * @param {{ code?: string, message: string, reason?: string, httpStatus?: number }} normalized
+ * @returns {boolean}
+ */
+function isDailyUploadLimitError(normalized) {
+  const { reason, message, httpStatus } = normalized;
+  const msg = (message || '').toLowerCase();
+
+  if (httpStatus === 403 && DAILY_LIMIT_REASONS.has(reason)) return true;
+  if (reason === 'quotaExceeded' && (msg.includes('daily') || msg.includes('upload limit') || msg.includes('verify'))) return true;
+
+  for (const sub of DAILY_LIMIT_MESSAGE_SUBSTRINGS) {
+    if (msg.includes(sub)) return true;
+  }
+  return false;
 }
 

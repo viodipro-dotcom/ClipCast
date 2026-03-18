@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import electron from 'electron';
 import { connect, isConnected, uploadVideo, loadClientCredentials } from './youtube.mjs';
+import { redactSecrets } from './secrets.mjs';
 
 const { app, shell } = electron;
 
@@ -47,9 +48,9 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
     ipcMain.handle('youtube:isConnected', async () => {
       // E2E_TEST mode: return deterministic value
       if (process.env.E2E_TEST === '1') {
-        return { ok: true, connected: process.env.E2E_REAL_YT === '1' ? isConnected() : false };
+        return { ok: true, connected: process.env.E2E_REAL_YT === '1' ? await isConnected() : false };
       }
-      return { ok: true, connected: isConnected() };
+      return { ok: true, connected: await isConnected() };
     });
     console.log('[youtube-ipc] Registered: youtube:isConnected');
 
@@ -61,8 +62,12 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         // Return fake success
         return { ok: true, videoId: `e2e-test-${Date.now()}` };
       }
-      const res = await uploadVideo(payload, { log, appRoot, outputsDir });
-      return res;
+      try {
+        const res = await uploadVideo(payload, { log, appRoot, outputsDir });
+        return res;
+      } catch (e) {
+        return { ok: false, error: String(e?.message ?? e) };
+      }
     });
     console.log('[youtube-ipc] Registered: youtube:upload');
 
@@ -79,10 +84,11 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
 
     ipcMain.handle('youtube:validateCredentials', async () => {
       try {
-        const creds = loadClientCredentials();
+        const creds = await loadClientCredentials();
         const userDataPath = app.getPath('userData');
         const credsPath = path.join(userDataPath, 'google_oauth_client.json');
         const fileExists = fs.existsSync(credsPath);
+        const sourceLabel = creds?.source === 'env' ? 'environment variables' : 'OS keychain';
         
         return {
           ok: true,
@@ -91,9 +97,9 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
           clientIdValid: creds.clientId.includes('.apps.googleusercontent.com'),
           filePath: credsPath,
           fileExists,
-          message: fileExists 
-            ? `Credentials loaded from ${credsPath}` 
-            : `Credentials loaded from environment variables`,
+          message: fileExists
+            ? `Credentials loaded from ${sourceLabel} (legacy file exists but is redacted)`
+            : `Credentials loaded from ${sourceLabel}`,
         };
       } catch (e) {
         const userDataPath = app.getPath('userData');
@@ -103,11 +109,11 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         return {
           ok: false,
           hasCredentials: false,
-          error: String(e?.message || e),
+          error: redactSecrets(String(e?.message || e)),
           filePath: credsPath,
           fileExists,
           message: fileExists
-            ? `File exists but credentials invalid: ${String(e?.message || e)}`
+            ? `File exists but credentials invalid: ${redactSecrets(String(e?.message || e))}`
             : `Credentials file not found at ${credsPath}`,
         };
       }

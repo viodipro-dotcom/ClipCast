@@ -7,6 +7,7 @@ import {
   AccordionDetails,
   AccordionSummary,
   Alert,
+  AlertTitle,
   Autocomplete,
   Checkbox,
   Box,
@@ -67,16 +68,27 @@ import VisibilityCell from './components/VisibilityCell';
 import MadeForKidsCell from './components/MadeForKidsCell';
 import AssistCenter from './components/AssistCenter';
 import AssistOverlay from './components/AssistOverlay';
+import UpdateBanner from './components/UpdateBanner';
 import { useTranslation } from 'react-i18next';
 import { UI_LANGUAGE_OPTIONS } from './i18n/languages';
 import { parseParamsFromUrl } from './lib/authDeepLink';
 import { getSupabase } from './lib/supabase';
+import { isNetworkError, type NetworkStatus, useNetworkStatus } from './lib/networkStatus';
 import {
+  ENTITLEMENT_LAST_CHECK_AT_KEY,
   INITIAL_AUTH_ENTITLEMENT,
   loadAuthAndEntitlement as loadAuthAndEntitlementState,
+  OFFLINE_GRACE_PERIOD_MS,
   type AuthEntitlementSnapshot,
 } from './lib/entitlement';
-import { consumeMetadata, consumeUpload, getUsageSnapshot, type UsageSnapshot } from './billing/usage';
+import {
+  finalizeQuota,
+  getUsageSnapshot,
+  releaseQuota,
+  reserveMetadata,
+  reserveUpload,
+  type UsageSnapshot,
+} from './billing/usage';
 import type { User } from '@supabase/supabase-js';
 
 // Re-export types for backward compatibility
@@ -92,7 +104,7 @@ type AutoUploadStatusMsg = {
   message?: string;
 };
 
-type BillingGateReason = 'sign_in' | 'not_subscribed' | 'limit_exceeded';
+type BillingGateReason = 'sign_in' | 'not_subscribed' | 'limit_exceeded' | 'reconnect_required';
 type LimitDialogState = {
   open: boolean;
   kind: 'metadata' | 'upload';
@@ -117,6 +129,16 @@ type SubscriptionRow = {
 
 const PRICING_URL = 'https://clip-cast-murex.vercel.app/pricing';
 const BILLING_URL = 'https://clip-cast-murex.vercel.app/account';
+/** Placeholder help URL for YouTube account verification (daily upload limit). */
+const YOUTUBE_VERIFICATION_GUIDE_URL = 'https://clip-cast-murex.vercel.app/guide/youtube-verification';
+
+/** Classify YouTube upload response as daily upload limit / verification required (do not charge credits, do not retry). */
+function isYoutubeDailyLimitError(res: { dailyUploadLimit?: boolean; error?: string } | null | undefined): boolean {
+  if (!res) return false;
+  if (res.dailyUploadLimit === true) return true;
+  const msg = (res.error ?? '').toLowerCase();
+  return /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/.test(msg);
+}
 
 const ZERO_WIDTH_RE = /[\u200B\u200C\u200D\uFEFF]/g;
 const HASHTAG_TOKEN_RE = /#([^\s#]+)/gu;
@@ -174,6 +196,42 @@ const normalizeHashtagsValue = (value: unknown): string => {
 export default function App() {
   const apiOk = Boolean(window.api);
   const { t, i18n } = useTranslation();
+  const { networkStatus, retryHeartbeat, markOffline } = useNetworkStatus();
+  const [offlineDialogOpen, setOfflineDialogOpen] = React.useState(false);
+  const offlineDialogOpenRef = React.useRef(false);
+  const lastNetworkStatusRef = React.useRef<NetworkStatus | null>(null);
+  const openOfflineDialog = React.useCallback(() => {
+    if (offlineDialogOpenRef.current) return;
+    offlineDialogOpenRef.current = true;
+    setOfflineDialogOpen(true);
+  }, []);
+  const closeOfflineDialog = React.useCallback(() => {
+    offlineDialogOpenRef.current = false;
+    setOfflineDialogOpen(false);
+  }, []);
+  const handleOfflineRetry = React.useCallback(async () => {
+    const ok = await retryHeartbeat();
+    if (ok) closeOfflineDialog();
+  }, [closeOfflineDialog, retryHeartbeat]);
+  const requireOnline = React.useCallback(
+    (opts?: { showDialog?: boolean }) => {
+      if (networkStatus !== 'offline') return true;
+      if (opts?.showDialog !== false) {
+        openOfflineDialog();
+      }
+      return false;
+    },
+    [networkStatus, openOfflineDialog],
+  );
+  const handleNetworkError = React.useCallback(
+    (err: unknown) => {
+      if (!isNetworkError(err)) return false;
+      markOffline(err);
+      openOfflineDialog();
+      return true;
+    },
+    [markOffline, openOfflineDialog],
+  );
   const platformLabels = React.useMemo(
     () => ({
       youtube: t('youtube'),
@@ -254,8 +312,12 @@ export default function App() {
   const [subscriptionInfo, setSubscriptionInfo] = React.useState<SubscriptionRow | null>(null);
   const [authEntitlement, setAuthEntitlement] =
     React.useState<AuthEntitlementSnapshot>(INITIAL_AUTH_ENTITLEMENT);
+  const authEntitlementRef = React.useRef<AuthEntitlementSnapshot>(INITIAL_AUTH_ENTITLEMENT);
   const [entitlementLoading, setEntitlementLoading] = React.useState(false);
   const lastProcessedDeepLinkRef = React.useRef<{ url: string; ts: number } | null>(null);
+  React.useEffect(() => {
+    authEntitlementRef.current = authEntitlement;
+  }, [authEntitlement]);
   const planAccess = React.useMemo(
     () => ({
       isActive: authEntitlement.isActive,
@@ -273,6 +335,23 @@ export default function App() {
     kind: 'metadata',
     snapshot: null,
   });
+
+  const [lastEntitlementCheckAt, setLastEntitlementCheckAt] = React.useState<number | null>(() => {
+    try {
+      const raw = localStorage.getItem(ENTITLEMENT_LAST_CHECK_AT_KEY);
+      if (raw == null) return null;
+      const n = Number(raw);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    } catch {
+      return null;
+    }
+  });
+
+  const limitedMode = React.useMemo(() => {
+    if (networkStatus !== 'offline') return false;
+    if (lastEntitlementCheckAt == null) return true;
+    return Date.now() - lastEntitlementCheckAt > OFFLINE_GRACE_PERIOD_MS;
+  }, [networkStatus, lastEntitlementCheckAt]);
 
   React.useEffect(() => {
     const loadUiLanguage = async () => {
@@ -310,6 +389,7 @@ export default function App() {
   React.useMemo(() => updateInterfaceSettings, [updateInterfaceSettings]);
   const [customInstructions, setCustomInstructions] = React.useState<string | CustomAiPlatformMap>({ all: '', youtube: '', instagram: '', tiktok: '' });
   const [youtubeLimitWarning, setYoutubeLimitWarning] = React.useState<string | null>(null);
+  const [youtubeDailyLimitModalOpen, setYoutubeDailyLimitModalOpen] = React.useState(false);
   
   // Load custom instructions on mount
   React.useEffect(() => {
@@ -324,9 +404,8 @@ export default function App() {
     void loadInstructions();
   }, []);
   const [uiScale, setUiScale] = React.useState<number>(() => {
-    // Always start at 100% (1.0) on app launch
-    // User can change it, but it will reset to 100% on next launch
-    const defaultScale = 1.0;
+    // Default scale on app launch is 90%
+    const defaultScale = 0.9;
     localStorage.setItem('uiScale', String(defaultScale));
     return defaultScale;
   });
@@ -409,6 +488,21 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  React.useEffect(() => {
+    const clamp = (v: number) => Math.min(2.0, Math.max(0.5, Math.round(v * 100) / 100));
+    const step = 0.05;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const direction = e.deltaY > 0 ? -1 : 1;
+      setUiScale(v => clamp(v + direction * step));
+    };
+
+    window.addEventListener('wheel', onWheel as any, { passive: false } as any);
+    return () => window.removeEventListener('wheel', onWheel as any);
   }, []);
 
   const theme = React.useMemo(
@@ -1032,7 +1126,7 @@ export default function App() {
           return;
         }
 
-        const defaultWidth = 220;
+        const defaultWidth = 170;
         api.setColumnWidth('youtube', defaultWidth);
         api.setColumnWidth('instagram', defaultWidth);
         api.setColumnWidth('tiktok', defaultWidth);
@@ -1147,6 +1241,26 @@ export default function App() {
   /** File paths for which metadata generation is currently running or queued (single-flight per file). */
   const [metadataGenerationBusyPaths, setMetadataGenerationBusyPaths] = React.useState<ReadonlySet<string>>(new Set());
   const [snack, setSnack] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    const prev = lastNetworkStatusRef.current;
+    if (!prev) {
+      lastNetworkStatusRef.current = networkStatus;
+      return;
+    }
+    if (prev !== 'offline' && networkStatus === 'offline') {
+      setSnack('No internet connection. Please reconnect to continue.');
+    }
+    if (prev === 'offline' && networkStatus === 'online') {
+      setSnack('Back online.');
+    }
+    lastNetworkStatusRef.current = networkStatus;
+  }, [networkStatus, setSnack]);
+  React.useEffect(() => {
+    if (networkStatus !== 'online') return;
+    if (offlineDialogOpenRef.current) {
+      closeOfflineDialog();
+    }
+  }, [closeOfflineDialog, networkStatus]);
   const ensureSignedIn = React.useCallback((): boolean => {
     if (planAccess.isSignedIn) return true;
     setBillingGateReason('sign_in');
@@ -1181,11 +1295,15 @@ export default function App() {
       const snapshot = await getUsageSnapshot();
       setUsageSnapshot(snapshot);
       setLimitDialog({ open: true, kind, snapshot });
-    } catch {
+    } catch (err) {
+      handleNetworkError(err);
       setLimitDialog({ open: true, kind, snapshot: null });
     }
-  }, [setSnack]);
+  }, [handleNetworkError, setSnack]);
   const handleBillingError = React.useCallback((err: unknown, kind?: 'metadata' | 'upload'): boolean => {
+    if (handleNetworkError(err)) {
+      return true;
+    }
     const message = extractBillingErrorText(err);
     const normalized = message.toLowerCase();
     if (normalized.includes('not_subscribed')) {
@@ -1202,10 +1320,55 @@ export default function App() {
     }
     setSnack('Billing check failed. Try again.');
     return false;
-  }, [extractBillingErrorText, handleLimitExceeded, setSnack]);
+  }, [extractBillingErrorText, handleLimitExceeded, handleNetworkError, setSnack]);
+  const createRequestId = React.useCallback(() => {
+    const c = typeof crypto !== 'undefined' ? crypto : undefined;
+    if (c && typeof c.randomUUID === 'function') {
+      return c.randomUUID();
+    }
+    if (c && typeof c.getRandomValues === 'function') {
+      const bytes = new Uint8Array(16);
+      c.getRandomValues(bytes);
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+      const r = Math.floor(Math.random() * 16);
+      const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }, []);
+  const reserveQuotaForRows = React.useCallback(async (
+    rows: JobRow[],
+    kind: 'metadata' | 'upload',
+  ) => {
+    const reservations = new Map<string, string>();
+    try {
+      for (const row of rows) {
+        const requestId = createRequestId();
+        const reservation = kind === 'metadata'
+          ? await reserveMetadata(requestId, 1)
+          : await reserveUpload(requestId, 1);
+        reservations.set(row.filePath, reservation.reservation_id);
+      }
+    } catch (err) {
+      const reservationIds = Array.from(reservations.values());
+      await Promise.all(
+        reservationIds.map((reservationId) => releaseQuota(reservationId).catch(() => null)),
+      );
+      throw err;
+    }
+    return reservations;
+  }, [createRequestId, releaseQuota, reserveMetadata, reserveUpload]);
   const refreshUsageSnapshot = React.useCallback(async () => {
     if (!planAccess.isSignedIn) {
       setUsageSnapshot(null);
+      setUsageLoading(false);
+      return;
+    }
+    if (!requireOnline({ showDialog: false })) {
       setUsageLoading(false);
       return;
     }
@@ -1214,6 +1377,9 @@ export default function App() {
       const snapshot = await getUsageSnapshot();
       setUsageSnapshot(snapshot);
     } catch (err) {
+      if (handleNetworkError(err)) {
+        return;
+      }
       const message = extractBillingErrorText(err);
       const normalized = message.toLowerCase();
       if (!normalized.includes('not_subscribed') && !normalized.includes('not_authenticated')) {
@@ -1223,13 +1389,17 @@ export default function App() {
     } finally {
       setUsageLoading(false);
     }
-  }, [extractBillingErrorText, planAccess.isSignedIn, setSnack]);
+  }, [extractBillingErrorText, handleNetworkError, planAccess.isSignedIn, requireOnline, setSnack]);
   const guardUploadAndScheduleAccess = React.useCallback((): boolean => {
+    if (limitedMode) {
+      setBillingGateReason('reconnect_required');
+      return false;
+    }
     if (!ensureSignedIn()) return false;
     if (planAccess.isActive) return true;
     setBillingGateReason('not_subscribed');
     return false;
-  }, [ensureSignedIn, planAccess.isActive]);
+  }, [limitedMode, ensureSignedIn, planAccess.isActive]);
   React.useEffect(() => {
     if (!accountDialogOpen) return;
     void refreshUsageSnapshot();
@@ -1363,6 +1533,22 @@ export default function App() {
       setYtConnected(false);
     }
   }, []);
+
+  const disconnectYouTube = React.useCallback(async () => {
+    try {
+      const res = await window.api?.secretsClearYouTubeTokens?.();
+      if (!res?.ok) {
+        setSnack(t('disconnectFailed'));
+        return;
+      }
+      setSnack(t('youtubeDisconnected'));
+    } catch (e) {
+      console.error(e);
+      setSnack(t('disconnectFailed'));
+    } finally {
+      void refreshYtConnected();
+    }
+  }, [refreshYtConnected, setSnack, t]);
 
   React.useEffect(() => {
     void refreshYtConnected();
@@ -2436,6 +2622,8 @@ export default function App() {
   // Handle schedule dialog actions
   const handleScheduleDialogSubmit = React.useCallback(async () => {
     if (!scheduleDialogRow || !scheduleDialogPlatform) return;
+    const requiresNetwork = scheduleDialogMode === 'assist' || scheduleDialogMode === 'now';
+    if (requiresNetwork && !requireOnline()) return;
     if (!guardUploadAndScheduleAccess()) return;
 
     // Save to history before any schedule action
@@ -2514,6 +2702,9 @@ export default function App() {
           // Reload jobs to update status
           void loadJobs();
         } else {
+          if (res?.error) {
+            handleNetworkError(res.error);
+          }
           setSnack(res?.error || t('failedToTriggerAssist'));
         }
         
@@ -2521,6 +2712,7 @@ export default function App() {
         setScheduleDialogRow(null);
         setScheduleDialogPlatform(null);
       } catch (e) {
+        handleNetworkError(e);
         console.error('Assist now error:', e);
         setSnack(t('failedToTriggerAssist'));
         setScheduleDialogOpen(false);
@@ -2559,9 +2751,12 @@ export default function App() {
             return;
           }
 
+          let uploadReservationId: string | null = null;
+          const uploadReservedNote = t('uploadCreditsReserved', { count: 1 });
           try {
-            const snapshot = await consumeUpload(1);
-            setUsageSnapshot(snapshot);
+            const requestId = createRequestId();
+            const reservation = await reserveUpload(requestId, 1);
+            uploadReservationId = reservation.reservation_id;
           } catch (err) {
             handleBillingError(err, 'upload');
             setScheduleDialogOpen(false);
@@ -2615,10 +2810,18 @@ export default function App() {
             },
           }));
 
-          setSnack(t('uploadingFileToPlatform', { file: scheduleDialogRow.filename, platform: platformLabels.youtube }));
+          setSnack(`${t('uploadingFileToPlatform', { file: scheduleDialogRow.filename, platform: platformLabels.youtube })} ${uploadReservedNote}`);
           const res: any = await window.api?.youtubeUpload?.(payload);
           
           if (res?.ok && res?.videoId) {
+            if (uploadReservationId) {
+              try {
+                const snapshot = await finalizeQuota(uploadReservationId);
+                setUsageSnapshot(snapshot);
+              } catch (err) {
+                console.error('Failed to finalize upload quota:', err);
+              }
+            }
             setSnack(t('uploadedToPlatformWithId', { platform: platformLabels.youtube, id: res.videoId }));
             await upsertJobRunForPlatform({
               row: scheduleDialogRow,
@@ -2628,12 +2831,27 @@ export default function App() {
               publishAtUtcMs: payload.publishAt ?? null,
             });
           } else {
-            setSnack(res?.error || t('failedToUploadToPlatform', { platform: platformLabels.youtube }));
+            if (res?.error) {
+              handleNetworkError(res.error);
+            }
+            if (uploadReservationId) {
+              try {
+                await releaseQuota(uploadReservationId);
+              } catch (err) {
+                console.error('Failed to release upload quota:', err);
+              }
+            }
+            const isDailyLimit = isYoutubeDailyLimitError(res);
+            if (isDailyLimit) {
+              setYoutubeDailyLimitModalOpen(true);
+            }
+            const failureMsg = isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : (res?.error || t('failedToUploadToPlatform', { platform: platformLabels.youtube }));
+            setSnack(`${failureMsg} ${t('uploadCreditsReleased', { count: 1 })}`);
             await upsertJobRunForPlatform({
               row: scheduleDialogRow,
               platform: 'youtube',
               ok: false,
-              error: res?.error || t('uploadFailed'),
+              error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : (res?.error || t('uploadFailed')),
               publishAtUtcMs: payload.publishAt ?? null,
             });
           }
@@ -2647,13 +2865,26 @@ export default function App() {
           });
           setScheduleDialogOpen(false);
         } catch (e) {
+          handleNetworkError(e);
           console.error('YouTube upload error:', e);
-          setSnack(t('failedToUploadToPlatformWithError', { platform: platformLabels.youtube, error: String(e) }));
+          if (uploadReservationId) {
+            try {
+              await releaseQuota(uploadReservationId);
+            } catch (err) {
+              console.error('Failed to release upload quota:', err);
+            }
+          }
+          const errMsg = String(e?.message ?? e);
+          const isDailyLimit = /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/i.test(errMsg);
+          if (isDailyLimit) {
+            setYoutubeDailyLimitModalOpen(true);
+          }
+          setSnack(`${t('failedToUploadToPlatformWithError', { platform: platformLabels.youtube, error: errMsg })} ${t('uploadCreditsReleased', { count: 1 })}`);
           await upsertJobRunForPlatform({
             row: scheduleDialogRow,
             platform: 'youtube',
             ok: false,
-            error: String(e),
+            error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : errMsg,
             publishAtUtcMs: publishAtMs ?? null,
           });
           updateRow(scheduleDialogRow.id, (r) => {
@@ -2737,6 +2968,7 @@ export default function App() {
             return { ...r, targets: updatedTargets, upload };
           });
         } catch (e) {
+          handleNetworkError(e);
           setSnack(t('failedToOpenPlatform', { platform: platformLabels[scheduleDialogPlatform] }));
         }
       }
@@ -2843,6 +3075,8 @@ export default function App() {
     platformLabels,
     guardUploadAndScheduleAccess,
     handleBillingError,
+    handleNetworkError,
+    requireOnline,
     t,
   ]);
 
@@ -4116,8 +4350,27 @@ React.useEffect(() => {
     return () => off?.();
   }, [handlePipelineFileDone]);
 
+  const syncSupabaseToken = React.useCallback(async () => {
+    if (!requireOnline({ showDialog: false })) return;
+    const supabase = getSupabase();
+    if (!supabase || !window.api?.authSetSupabaseAccessToken) return;
+    try {
+      const { data } = await supabase.auth.getSession();
+      const token = data?.session?.access_token ?? '';
+      const baseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL as string | undefined;
+      const functionsUrl = baseUrl ? `${String(baseUrl).replace(/\/+$/, '')}/functions/v1` : '';
+      await window.api.authSetSupabaseAccessToken(token, functionsUrl);
+    } catch (err) {
+      handleNetworkError(err);
+    }
+  }, [handleNetworkError, requireOnline]);
+
   const loadAuthAndEntitlement = React.useCallback(async () => {
     const supabase = getSupabase();
+    if (!requireOnline({ showDialog: false })) {
+      setEntitlementLoading(false);
+      return authEntitlementRef.current;
+    }
     setEntitlementLoading(true);
     try {
       const snapshot = await loadAuthAndEntitlementState(supabase);
@@ -4125,8 +4378,21 @@ React.useEffect(() => {
       setSupabaseUser(snapshot.user);
       setEntitlement(snapshot.entitlement as EntitlementRow | null);
       setSubscriptionInfo(snapshot.subscription as SubscriptionRow | null);
+      if (snapshot.isSignedIn) {
+        const now = Date.now();
+        setLastEntitlementCheckAt(now);
+        try {
+          localStorage.setItem(ENTITLEMENT_LAST_CHECK_AT_KEY, String(now));
+        } catch {
+          // ignore
+        }
+      }
+      void syncSupabaseToken();
       return snapshot;
     } catch (err: unknown) {
+      if (handleNetworkError(err)) {
+        return authEntitlementRef.current;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error('[auth] load auth+entitlement failed:', message);
       setAuthEntitlement({
@@ -4136,6 +4402,7 @@ React.useEffect(() => {
       setSupabaseUser(null);
       setEntitlement(null);
       setSubscriptionInfo(null);
+      void syncSupabaseToken();
       return {
         ...INITIAL_AUTH_ENTITLEMENT,
         authState: 'signedOut' as const,
@@ -4143,11 +4410,39 @@ React.useEffect(() => {
     } finally {
       setEntitlementLoading(false);
     }
-  }, []);
+  }, [handleNetworkError, requireOnline, syncSupabaseToken]);
+
+  React.useEffect(() => {
+    if (networkStatus !== 'online') return;
+    void loadAuthAndEntitlement();
+    void refreshUsageSnapshot();
+  }, [loadAuthAndEntitlement, networkStatus, refreshUsageSnapshot]);
+
+  const ENTITLEMENT_RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+  React.useEffect(() => {
+    const id = window.setInterval(() => {
+      void loadAuthAndEntitlement();
+    }, ENTITLEMENT_RECHECK_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [loadAuthAndEntitlement]);
+
+  React.useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && networkStatus === 'online') {
+        void loadAuthAndEntitlement();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange);
+  }, [loadAuthAndEntitlement, networkStatus]);
 
   // Deep link: parse callback URL, exchange code or setSession, update auth state, close Account modal, toast
   const handleAuthDeepLink = React.useCallback(async (url: string) => {
     if (!url) return;
+    if (!requireOnline()) {
+      window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
+      return;
+    }
     const now = Date.now();
     const last = lastProcessedDeepLinkRef.current;
     if (last && last.url === url && now - last.ts < 2000) {
@@ -4201,6 +4496,7 @@ React.useEffect(() => {
 
       console.log('[auth] branch used', branch);
       const snapshot = await loadAuthAndEntitlement();
+      void syncSupabaseToken();
       setSnack(snapshot.user?.email ? t('signedInAs', { email: snapshot.user.email }) : t('authSignedInSuccess'));
       console.log('[auth] session exists', Boolean(snapshot.user), 'user email:', snapshot.user?.email ?? '—');
 
@@ -4209,12 +4505,16 @@ React.useEffect(() => {
       console.log('[auth] modal closed');
       window.dispatchEvent(new CustomEvent('auth:signed-in'));
     } catch (err: unknown) {
+      if (handleNetworkError(err)) {
+        window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       console.error('[auth] finalize failed:', message);
       setSnack(t('authExchangeFailed', { message }));
       window.dispatchEvent(new CustomEvent('auth:sign-in-failed'));
     }
-  }, [loadAuthAndEntitlement, t]);
+  }, [handleNetworkError, loadAuthAndEntitlement, requireOnline, syncSupabaseToken, t]);
 
   React.useEffect(() => {
     const onDeepLink = (e: Event) => {
@@ -4232,11 +4532,12 @@ React.useEffect(() => {
     void loadAuthAndEntitlement();
     const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
       void loadAuthAndEntitlement();
+      void syncSupabaseToken();
     });
     return () => {
       subscription.unsubscribe();
     };
-  }, [loadAuthAndEntitlement]);
+  }, [loadAuthAndEntitlement, syncSupabaseToken]);
 
   const handleOpenExternal = React.useCallback(
     async (url: string) => {
@@ -4245,12 +4546,15 @@ React.useEffect(() => {
         setSnack(t('signInNotConfigured'));
         return;
       }
+      if (networkStatus === 'offline') {
+        setSnack('You are offline. This page may not load.');
+      }
       const result = await opener(url);
       if (result?.ok !== true && result?.error) {
         setSnack(result.error ?? t('signInError', { message: 'Failed to open browser' }));
       }
     },
-    [setSnack, t],
+    [networkStatus, setSnack, t],
   );
 
   const handleUpgrade = React.useCallback(() => {
@@ -5537,8 +5841,8 @@ React.useEffect(() => {
       {
         field: 'youtube',
         headerName: platformLabels.youtube,
-        width: applyWidth('youtube', 220),
-        minWidth: 220,
+        width: applyWidth('youtube', 170),
+        minWidth: 170,
         maxWidth: 300,
         flex: 0,
         sortable: false,
@@ -5562,7 +5866,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'youtube');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {t('schedule')}
               </Button>
@@ -5621,7 +5925,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'youtube');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {getButtonLabel()}
               </Button>
@@ -5632,8 +5936,8 @@ React.useEffect(() => {
       {
         field: 'instagram',
         headerName: platformLabels.instagram,
-        width: applyWidth('instagram', 220),
-        minWidth: 220,
+        width: applyWidth('instagram', 170),
+        minWidth: 170,
         maxWidth: 300,
         flex: 0,
         sortable: false,
@@ -5657,7 +5961,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'instagram');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {t('schedule')}
               </Button>
@@ -5715,7 +6019,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'instagram');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {getButtonLabel()}
               </Button>
@@ -5726,8 +6030,8 @@ React.useEffect(() => {
       {
         field: 'tiktok',
         headerName: platformLabels.tiktok,
-        width: applyWidth('tiktok', 220),
-        minWidth: 220,
+        width: applyWidth('tiktok', 170),
+        minWidth: 170,
         maxWidth: 300,
         flex: 0,
         sortable: false,
@@ -5751,7 +6055,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'tiktok');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {t('schedule')}
               </Button>
@@ -5809,7 +6113,7 @@ React.useEffect(() => {
                   e.stopPropagation();
                   handleContextMenu(e, params.row.id, 'tiktok');
                 }}
-                sx={{ minWidth: 220, width: '100%' }}
+                sx={{ width: 'fit-content', minWidth: 170 }}
               >
                 {getButtonLabel()}
               </Button>
@@ -7081,7 +7385,12 @@ const add = async () => {
 
   const generateMetadata = async (specificRows?: JobRow[], platformsToGenerate?: ('youtube' | 'instagram' | 'tiktok')[]) => {
     if (!window.api?.runPipeline) return;
+    if (!requireOnline()) return;
     if (!ensureSignedIn()) return;
+    if (limitedMode) {
+      setBillingGateReason('reconnect_required');
+      return;
+    }
     const rowsArray = Array.from(rowsById.values());
     if (rowsArray.length === 0) return;
 
@@ -7263,9 +7572,10 @@ const add = async () => {
       }
     }
 
+    let metadataReservations: Map<string, string> | null = null;
     try {
-      const snapshot = await consumeMetadata(toProcess.length);
-      setUsageSnapshot(snapshot);
+      metadataReservations = await reserveQuotaForRows(toProcess, 'metadata');
+      setSnack(t('metadataCreditsReserved', { count: metadataReservations.size }));
     } catch (err) {
       handleBillingError(err, 'metadata');
       return;
@@ -7340,7 +7650,27 @@ const add = async () => {
         }
       }, 2000); // Check every 2 seconds
       
-      const res = await window.api.runPipeline(payload);
+      await syncSupabaseToken();
+      const supabase = getSupabase();
+      let accessToken = '';
+      if (supabase) {
+        try {
+          const { data } = await supabase.auth.getSession();
+          accessToken = data?.session?.access_token ?? '';
+        } catch {
+          accessToken = '';
+        }
+      }
+      const baseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL as string | undefined;
+      const functionsUrl = baseUrl ? `${String(baseUrl).replace(/\/+$/, '')}/functions/v1` : '';
+      const runPayload = {
+        ...payload,
+        auth: {
+          accessToken,
+          functionsUrl,
+        },
+      };
+      const res = await window.api.runPipeline(runPayload);
       console.log(`[generateMetadata] runPipeline returned:`, {
         code: res?.code,
         runId: res?.runId,
@@ -7377,8 +7707,40 @@ const add = async () => {
         console.error('[generateMetadata] Failed to apply preset formatting:', e);
       }
 
+      let metadataSuccessCount = 0;
+      let metadataReleasedCount = 0;
+      if (metadataReservations) {
+        const results = await Promise.all(
+          toProcess.map(async (row) => ({
+            filePath: row.filePath,
+            hasMetadata: await checkMetadataOnDisk(row.filePath),
+          })),
+        );
+        metadataSuccessCount = results.filter((result) => result.hasMetadata).length;
+        let latestSnapshot: UsageSnapshot | null = null;
+        for (const result of results) {
+          const reservationId = metadataReservations.get(result.filePath);
+          if (!reservationId) continue;
+          if (result.hasMetadata) {
+            try {
+              latestSnapshot = await finalizeQuota(reservationId);
+            } catch (err) {
+              console.error('Failed to finalize metadata quota:', err);
+            }
+          } else {
+            try {
+              await releaseQuota(reservationId);
+              metadataReleasedCount += 1;
+            } catch (err) {
+              console.error('Failed to release metadata quota:', err);
+            }
+          }
+        }
+        if (latestSnapshot) setUsageSnapshot(latestSnapshot);
+      }
+
       // Pull generated metadata from outputs (so Details can show it immediately)
-      if (res?.code === 0) {
+      if (res?.code === 0 && metadataSuccessCount > 0) {
         console.log(`[generateMetadata] Pipeline completed successfully (code: ${res.code}), refreshing metadata...`);
         
         // Unmark deleted metadata from tombstone for regenerated platforms (for any files that weren't already processed incrementally)
@@ -7423,15 +7785,19 @@ const add = async () => {
         }
         
         // Show success message
+        const successCount = metadataSuccessCount || toProcess.length;
+        const releasedNote = metadataReleasedCount > 0
+          ? ` ${t('metadataCreditsReleased', { count: metadataReleasedCount })}`
+          : '';
         if (platformsToGenerate && platformsToGenerate.length > 0) {
           setSnack(
-            t('metadataGeneratedSuccessWithPlatforms', {
-              count: toProcess.length,
+            `${t('metadataGeneratedSuccessWithPlatforms', {
+              count: successCount,
               platforms: platformsToGenerate.map((p) => platformLabels[p]).join(', '),
-            }),
+            })}${releasedNote}`,
           );
         } else {
-          setSnack(t('metadataGeneratedSuccess', { count: toProcess.length }));
+          setSnack(`${t('metadataGeneratedSuccess', { count: successCount })}${releasedNote}`);
         }
         
         // Final refresh for any remaining files with increasing delays to ensure files are fully written
@@ -7458,12 +7824,27 @@ const add = async () => {
             updateRow(row.id, (r) => ({ ...r, status: 'Error' }));
           }
         }
-        setSnack(t('metadataGenerationFailedWithCode', { code: res?.code }));
+        const failureMsg = t('metadataGenerationFailedWithCode', { code: res?.code });
+        const releasedNote = metadataReleasedCount > 0
+          ? ` ${t('metadataCreditsReleased', { count: metadataReleasedCount })}`
+          : '';
+        setSnack(metadataSuccessCount > 0 ? `${failureMsg}${releasedNote}` : `${failureMsg}${releasedNote}`);
       }
-    } catch (_e) {
+    } catch (e) {
+      handleNetworkError(e);
+      let releasedCount = 0;
+      if (metadataReservations) {
+        const reservationIds = Array.from(metadataReservations.values());
+        releasedCount = reservationIds.length;
+        await Promise.all(
+          reservationIds.map((reservationId) => releaseQuota(reservationId).catch(() => null)),
+        );
+      }
       for (const row of toProcess) {
         updateRow(row.id, (r) => ({ ...r, status: 'Error' }));
       }
+      const releasedNote = releasedCount > 0 ? ` ${t('metadataCreditsReleased', { count: releasedCount })}` : '';
+      setSnack(`${t('metadataGenerationError')}${releasedNote}`);
     } finally {
       setMetadataGenerationBusyPaths((prev) => {
         const next = new Set(prev);
@@ -7478,6 +7859,8 @@ const add = async () => {
     target: JobRow[],
     opts: { generateMetadata: boolean; youtube: boolean; instagram: boolean; tiktok: boolean },
   ) => {
+    const needsNetwork = opts.generateMetadata || opts.youtube || opts.instagram || opts.tiktok;
+    if (needsNetwork && !requireOnline()) return;
     if (!guardUploadAndScheduleAccess()) return;
     if (!target.length) {
       setSnack(t('selectAtLeastOneVideoFile'));
@@ -7510,6 +7893,12 @@ const add = async () => {
     // 2. Upload to YouTube
     const anyYouTubeToDo = opts.youtube && target.some((r) => !isDoneOnPlatform(r, 'youtube'));
     if (anyYouTubeToDo && !hasError) {
+      let uploadReservations: Map<string, string> | null = null;
+      let successCount = 0;
+      let failCount = 0;
+      let sawLimitError = false;
+      let latestSnapshot: UsageSnapshot | null = null;
+      let uploadReleasedCount = 0;
       try {
         const uploadTargets = target.filter((r) => !isDoneOnPlatform(r, 'youtube'));
         ytSkippedDone += Math.max(0, target.length - uploadTargets.length);
@@ -7519,22 +7908,29 @@ const add = async () => {
           setSnack(t('youtubeNotConnectedPrompt'));
           hasError = true;
         } else {
+          // Upload each selected video
           try {
-            const snapshot = await consumeUpload(uploadTargets.length);
-            setUsageSnapshot(snapshot);
+            uploadReservations = await reserveQuotaForRows(uploadTargets, 'upload');
+            setSnack(t('uploadCreditsReserved', { count: uploadTargets.length }));
           } catch (err) {
             handleBillingError(err, 'upload');
             return;
           }
-          // Upload each selected video
-          let successCount = 0;
-          let failCount = 0;
-          let sawLimitError = false;
           
-          for (const row of uploadTargets) {
+          for (let uploadIdx = 0; uploadIdx < uploadTargets.length; uploadIdx++) {
+            const row = uploadTargets[uploadIdx];
+            const reservationId = uploadReservations?.get(row.filePath);
             try {
               if (isDoneOnPlatform(row, 'youtube')) {
                 ytSkippedDone += 1;
+                if (reservationId) {
+                  try {
+                    await releaseQuota(reservationId);
+                    uploadReleasedCount += 1;
+                  } catch (err) {
+                    console.error('Failed to release upload quota:', err);
+                  }
+                }
                 continue;
               }
 
@@ -7607,6 +8003,13 @@ const add = async () => {
               
               if (res?.ok && res?.videoId) {
                 successCount++;
+                if (reservationId) {
+                  try {
+                    latestSnapshot = await finalizeQuota(reservationId);
+                  } catch (err) {
+                    console.error('Failed to finalize upload quota:', err);
+                  }
+                }
                 await upsertJobRunForPlatform({
                   row,
                   platform: 'youtube',
@@ -7616,9 +8019,49 @@ const add = async () => {
                 });
               } else {
                 failCount++;
-                if (res?.error?.includes('exceeded the number of videos')) {
+                if (res?.error) {
+                  handleNetworkError(res.error);
+                }
+                if (reservationId) {
+                  try {
+                    await releaseQuota(reservationId);
+                    uploadReleasedCount += 1;
+                  } catch (err) {
+                    console.error('Failed to release upload quota:', err);
+                  }
+                }
+                const isDailyLimit = isYoutubeDailyLimitError(res);
+                if (isDailyLimit) {
                   setYoutubeLimitWarning(t('youtubeUploadLimitReached'));
                   sawLimitError = true;
+                  setYoutubeDailyLimitModalOpen(true);
+                  await upsertJobRunForPlatform({
+                    row,
+                    platform: 'youtube',
+                    ok: false,
+                    error: t('youtubeDailyLimitBlockedStatus'),
+                    publishAtUtcMs: payload.publishAt ?? null,
+                  });
+                  updateRow(row.id, (r) => {
+                    const upload = { ...(r.upload || {}) };
+                    if (upload.youtube) {
+                      delete upload.youtube;
+                    }
+                    return { ...r, upload };
+                  });
+                  // Release reservations for remaining rows (do not charge)
+                  for (let j = uploadIdx + 1; j < uploadTargets.length; j++) {
+                    const rid = uploadReservations?.get(uploadTargets[j].filePath);
+                    if (rid) {
+                      try {
+                        await releaseQuota(rid);
+                        uploadReleasedCount += 1;
+                      } catch (err) {
+                        console.error('Failed to release upload quota:', err);
+                      }
+                    }
+                  }
+                  break;
                 }
                 await upsertJobRunForPlatform({
                   row,
@@ -7637,11 +8080,51 @@ const add = async () => {
               });
             } catch (e) {
               failCount++;
+              handleNetworkError(e);
               console.error(`Failed to upload ${row.filename}:`, e);
+              if (reservationId) {
+                try {
+                  await releaseQuota(reservationId);
+                  uploadReleasedCount += 1;
+                } catch (err) {
+                  console.error('Failed to release upload quota:', err);
+                }
+              }
               const errText = String(e);
-              if (errText.includes('exceeded the number of videos')) {
+              const isDailyLimit = /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/i.test(errText);
+              if (isDailyLimit) {
                 setYoutubeLimitWarning(t('youtubeUploadLimitReached'));
                 sawLimitError = true;
+                setYoutubeDailyLimitModalOpen(true);
+                const jobsForRowNow = getJobsForRow(row);
+                const ytJobNow = jobsForRowNow.find((j) => Boolean(j.targets?.youtube));
+                const publishAtMsNow = typeof ytJobNow?.publishAtUtcMs === 'number' ? ytJobNow.publishAtUtcMs : null;
+                await upsertJobRunForPlatform({
+                  row,
+                  platform: 'youtube',
+                  ok: false,
+                  error: t('youtubeDailyLimitBlockedStatus'),
+                  publishAtUtcMs: publishAtMsNow ?? null,
+                });
+                updateRow(row.id, (r) => {
+                  const upload = { ...(r.upload || {}) };
+                  if (upload.youtube) {
+                    delete upload.youtube;
+                  }
+                  return { ...r, upload };
+                });
+                for (let j = uploadIdx + 1; j < uploadTargets.length; j++) {
+                  const rid = uploadReservations?.get(uploadTargets[j].filePath);
+                  if (rid) {
+                    try {
+                      await releaseQuota(rid);
+                      uploadReleasedCount += 1;
+                    } catch (err) {
+                      console.error('Failed to release upload quota:', err);
+                    }
+                  }
+                }
+                break;
               }
               const jobsForRowNow = getJobsForRow(row);
               const ytJobNow = jobsForRowNow.find((j) => Boolean(j.targets?.youtube));
@@ -7663,24 +8146,42 @@ const add = async () => {
             }
           }
           
+          if (latestSnapshot) {
+            setUsageSnapshot(latestSnapshot);
+          }
+
+          const releasedNote = uploadReleasedCount > 0
+            ? ` ${t('uploadCreditsReleased', { count: uploadReleasedCount })}`
+            : '';
           if (successCount > 0 && failCount === 0) {
             setSnack(t('uploadedSuccessCountToPlatform', { count: successCount, platform: platformLabels.youtube }));
           } else if (successCount > 0 && failCount > 0) {
-            setSnack(t('uploadedWithFailures', { successCount, failCount }));
+            setSnack(`${t('uploadedWithFailures', { successCount, failCount })}${releasedNote}`);
             hasError = true;
           } else {
             if (sawLimitError) {
-              const msg = t('youtubeUploadLimitReachedAll');
-              setSnack(msg);
-              setYoutubeLimitWarning(msg);
+              const msg = t('youtubeDailyLimitUploadsPaused');
+              setSnack(`${msg}${releasedNote || ` ${t('uploadCreditsReleased', { count: uploadTargets.length })}`}`);
+              setYoutubeLimitWarning(t('youtubeUploadLimitReachedAll'));
             } else {
-              setSnack(t('failedToUploadCountToPlatform', { count: failCount, platform: platformLabels.youtube }));
+              const baseMsg = t('failedToUploadCountToPlatform', { count: failCount, platform: platformLabels.youtube });
+              const fallbackRelease = uploadReservations ? ` ${t('uploadCreditsReleased', { count: uploadReservations.size })}` : '';
+              setSnack(`${baseMsg}${releasedNote || fallbackRelease}`);
             }
             hasError = true;
           }
         }
       } catch (e: any) {
+        handleNetworkError(e);
         console.error('YouTube upload error:', e);
+        let releasedCount = 0;
+        if (uploadReservations) {
+          const reservationIds = Array.from(uploadReservations.values());
+          releasedCount = reservationIds.length;
+          await Promise.all(
+            reservationIds.map((reservationId) => releaseQuota(reservationId).catch(() => null)),
+          );
+        }
         // Extract error message from YouTube API or IPC error
         // IPC errors may have the message nested: "Error invoking remote method 'youtube:upload': Error: ..."
         let errorMsg = e?.message || String(e);
@@ -7693,17 +8194,19 @@ const add = async () => {
         }
         
         let userFriendlyMsg = t('uploadFailedToPlatform', { platform: platformLabels.youtube });
-        
-        if (errorMsg.includes('exceeded the number of videos')) {
+        const isDailyLimit = /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/i.test(errorMsg);
+        if (isDailyLimit) {
           userFriendlyMsg = t('youtubeUploadLimitReached');
           setYoutubeLimitWarning(userFriendlyMsg);
+          setYoutubeDailyLimitModalOpen(true);
         } else if (errorMsg.includes('quota')) {
           userFriendlyMsg = t('youtubeQuotaExceeded');
         } else if (errorMsg.includes('Not connected')) {
           userFriendlyMsg = t('youtubeNotConnectedPrompt');
         }
         
-        setSnack(userFriendlyMsg);
+        const suffix = releasedCount > 0 ? ` ${t('uploadCreditsReleased', { count: releasedCount })}` : '';
+        setSnack(`${userFriendlyMsg}${suffix}`);
         hasError = true;
       }
     }
@@ -7723,7 +8226,10 @@ const add = async () => {
     getJobsForRow,
     guardUploadAndScheduleAccess,
     handleBillingError,
+    handleNetworkError,
     loadJobs,
+    requireOnline,
+    reserveQuotaForRows,
     setScheduledJobs,
     t,
     updateRow,
@@ -7884,13 +8390,20 @@ const add = async () => {
     }
   };
 
-  // Hash-based routing for Assist Center
-  const [hash, setHash] = React.useState(() => window.location.hash);
+  // Hash-based routing for Assist Center / Overlay (supports both "#foo" and "#/foo")
+  const normalizeHash = React.useCallback((raw: string): string => {
+    if (!raw) return '';
+    const cleaned = raw.replace(/^#\/?/, '');
+    if (!cleaned) return '';
+    return `#/${cleaned}`;
+  }, []);
+
+  const [hash, setHash] = React.useState(() => normalizeHash(window.location.hash));
   React.useEffect(() => {
-    const handleHashChange = () => setHash(window.location.hash);
+    const handleHashChange = () => setHash((prev) => normalizeHash(window.location.hash || prev));
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [normalizeHash]);
 
   // Show Assist Center if hash matches
   if (hash === '#/assist-overlay') {
@@ -7929,6 +8442,8 @@ const add = async () => {
     ? 'No active plan'
     : billingGateReason === 'limit_exceeded'
     ? 'Limit reached'
+    : billingGateReason === 'reconnect_required'
+    ? t('reconnectRequiredTitle')
     : '';
   const billingGateBody = billingGateReason === 'sign_in'
     ? 'Please sign in to continue.'
@@ -7936,12 +8451,47 @@ const add = async () => {
     ? 'No active plan. Please subscribe or upgrade to continue.'
     : billingGateReason === 'limit_exceeded'
     ? 'Limit reached for this billing period. Upgrade to continue.'
+    : billingGateReason === 'reconnect_required'
+    ? t('reconnectRequiredBody')
     : '';
   const billingGateActionLabel = billingGateReason === 'sign_in' ? 'Sign in' : 'Upgrade';
+  const billingGateShowActionButton = billingGateReason !== 'reconnect_required';
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <UpdateBanner />
+      {networkStatus === 'offline' && (
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 12,
+            left: 12,
+            right: 12,
+            zIndex: 9998,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          <Alert
+            severity="warning"
+            action={
+              <Button color="inherit" size="small" onClick={handleOfflineRetry}>
+                Retry
+              </Button>
+            }
+          >
+            <AlertTitle>You're offline</AlertTitle>
+            Internet connection is required for sign-in, metadata, billing checks, and uploads.
+          </Alert>
+          {limitedMode && (
+            <Alert severity="info">
+              {t('reconnectRequiredBody')}
+            </Alert>
+          )}
+        </Box>
+      )}
       {showSignInBanner && (
         <Box
           sx={{
@@ -7996,10 +8546,17 @@ const add = async () => {
         onDrop={handleDrop}
         className={dark ? 'dark' : ''}
         sx={{
-          p: 3,
+          px: 3,
+          pt: interfaceSettings.commandBarPosition === 'top' ? 0 : 1.5,
+          pb: interfaceSettings.commandBarPosition === 'bottom' ? 0 : 1.5,
           zoom: uiScale,
           overflowX: 'hidden',
-          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          // Fixed height so flex:1 content fills to bottom with same gap as sides (p:3),
+          // compensating for any scale < 1 so tabs always reach the bottom.
+          height: uiScale < 1 ? `calc(100vh / ${uiScale})` : '100vh',
+          minHeight: uiScale < 1 ? `calc(100vh / ${uiScale})` : '100vh',
           width: '100%',
           maxWidth: '100%',
           // Enhanced animated gradient background with project colors
@@ -8072,6 +8629,7 @@ const add = async () => {
         {/* Command Bar - conditionally rendered at top or bottom */}
         {interfaceSettings.commandBarPosition === 'top' && (
           <CommandBar
+            position="top"
             onAddClick={() => setAddDialogOpen(true)}
             onPlanClick={() => {
               if (!guardUploadAndScheduleAccess()) return;
@@ -8121,6 +8679,7 @@ const add = async () => {
               setSnack(t('failedToReconnect'));
             }
           }}
+          onDisconnect={disconnectYouTube}
           dark={dark}
           />
         )}
@@ -8400,7 +8959,10 @@ const add = async () => {
           open={accountDialogOpen}
           onClose={() => setAccountDialogOpen(false)}
           onSnack={setSnack}
+          onRequireOnline={() => requireOnline()}
+          onNetworkError={handleNetworkError}
           supabaseUser={supabaseUser}
+          networkStatus={networkStatus}
           entitlement={entitlement ?? (supabaseUser ? { plan: 'try_free', status: 'inactive' } : null)}
           subscription={subscriptionInfo}
           usageSnapshot={usageSnapshot}
@@ -8415,8 +8977,31 @@ const add = async () => {
             setSubscriptionInfo(null);
             setUsageSnapshot(null);
             setUsageLoading(false);
+            void window.api?.authSetSupabaseAccessToken?.('');
           }}
         />
+
+        <Dialog
+          open={offlineDialogOpen}
+          onClose={closeOfflineDialog}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Internet connection required</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Reconnect to the internet and try again.
+            </Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={closeOfflineDialog} variant="outlined">
+              Close
+            </Button>
+            <Button onClick={handleOfflineRetry} variant="contained">
+              Retry
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         <Dialog
           open={Boolean(billingGateReason)}
@@ -8434,7 +9019,7 @@ const add = async () => {
             <Button onClick={() => setBillingGateReason(null)} variant="outlined">
               Close
             </Button>
-            {billingGateReason && (
+            {billingGateReason && billingGateShowActionButton && (
               <Button
                 variant="contained"
                 onClick={() => {
@@ -9465,21 +10050,30 @@ const add = async () => {
           </Stack>
         </Box>
 
-        <Stack 
+        <Stack
           ref={splitterContainerRef}
-          direction={interfaceSettings.panelsLayout === 'swapped' ? 'row-reverse' : 'row'} 
-          spacing={0} 
-          alignItems="stretch" 
-          sx={{ mt: 3, height: 'calc(100vh - 200px)', width: '100%', minWidth: 0, flex: 1, overflow: 'visible', display: 'flex', position: 'relative' }}
+          direction={interfaceSettings.panelsLayout === 'swapped' ? 'row-reverse' : 'row'}
+          spacing={0}
+          alignItems="stretch"
+          sx={{
+            mt: 1.5,
+            flex: 1,
+            minHeight: 0, // Let flex shrink so panels extend to bottom; gap = padding (p:3) like sides
+            width: '100%',
+            minWidth: 0,
+            overflow: 'visible',
+            display: 'flex',
+            position: 'relative',
+          }}
         >
           <Paper
             sx={{
-              flex: '1 1 0%', // Use 0% as flex-basis to allow proper flexbox sizing
+              flex: '1 1 0%',
               minHeight: 520,
-              minWidth: 0, // Allow flexbox to shrink below content size
-              width: '100%', // Ensure full width of flex container
-              maxWidth: '100%', // Prevent overflow
-              maxHeight: 'calc(100vh - 200px)',
+              minWidth: 0,
+              width: '100%',
+              maxWidth: '100%',
+              maxHeight: '100%',
               borderRadius: 3,
               overflow: 'hidden',
               display: 'flex',
@@ -9803,6 +10397,23 @@ const add = async () => {
                 {youtubeLimitWarning}
               </Alert>
             )}
+            <Dialog open={youtubeDailyLimitModalOpen} onClose={() => setYoutubeDailyLimitModalOpen(false)} maxWidth="sm" fullWidth>
+              <DialogTitle>{t('youtubeDailyLimitModalTitle')}</DialogTitle>
+              <DialogContent>
+                <Typography sx={{ pt: 0 }}>{t('youtubeDailyLimitModalBody')}</Typography>
+              </DialogContent>
+              <DialogActions sx={{ px: 2, pb: 1 }}>
+                <Button onClick={() => setYoutubeDailyLimitModalOpen(false)}>{t('close')}</Button>
+                <Button
+                  variant="contained"
+                  onClick={() => {
+                    window.api?.openExternal?.(YOUTUBE_VERIFICATION_GUIDE_URL);
+                  }}
+                >
+                  {t('youtubeDailyLimitLearnVerify')}
+                </Button>
+              </DialogActions>
+            </Dialog>
             <Box 
               sx={{ 
                 flex: 1, 
@@ -10082,6 +10693,7 @@ const add = async () => {
                                 disabled={!hasSelection}
                                 onClick={async () => {
                                   // Retry upload for selected failed items
+                                  if (!requireOnline()) return;
                                   if (!guardUploadAndScheduleAccess()) return;
                                   const failedSelectedRows = sortedRows.filter(
                                     row => selectedIds.includes(row.id) && getRowStatus(row) === 'failed'
@@ -10092,10 +10704,12 @@ const add = async () => {
                                     const platformStatus = getPlatformStatus(row, 'youtube');
                                     return platformStatus.status === 'failed';
                                   });
+                                  let retryReservations: Map<string, string> | null = null;
+                                  let latestSnapshot: UsageSnapshot | null = null;
                                   if (youtubeRetries.length > 0) {
                                     try {
-                                      const snapshot = await consumeUpload(youtubeRetries.length);
-                                      setUsageSnapshot(snapshot);
+                                      retryReservations = await reserveQuotaForRows(youtubeRetries, 'upload');
+                                      setSnack(t('uploadCreditsReserved', { count: youtubeRetries.length }));
                                     } catch (err) {
                                       handleBillingError(err, 'upload');
                                       return;
@@ -10111,6 +10725,7 @@ const add = async () => {
                                         // Reset failed status and retry
                                         if (platform === 'youtube') {
                                           // Retry YouTube upload
+                                          const reservationId = retryReservations?.get(row.filePath);
                                           const outputs = await window.api?.readOutputsForPath?.(row.filePath);
                                           const exports = outputs?.exports?.youtube || {};
                                           const meta = outputs?.meta?.platforms?.youtube || {};
@@ -10135,6 +10750,13 @@ const add = async () => {
                                           try {
                                             const res: any = await window.api?.youtubeUpload?.(payload);
                                             if (res?.ok && res?.videoId) {
+                                              if (reservationId) {
+                                                try {
+                                                  latestSnapshot = await finalizeQuota(reservationId);
+                                                } catch (err) {
+                                                  console.error('Failed to finalize upload quota:', err);
+                                                }
+                                              }
                                               await upsertJobRunForPlatform({
                                                 row,
                                                 platform: 'youtube',
@@ -10143,21 +10765,48 @@ const add = async () => {
                                                 publishAtUtcMs: payload.publishAt ?? null,
                                               });
                                             } else {
+                                              if (res?.error) {
+                                                handleNetworkError(res.error);
+                                              }
+                                              if (reservationId) {
+                                                try {
+                                                  await releaseQuota(reservationId);
+                                                } catch (err) {
+                                                  console.error('Failed to release upload quota:', err);
+                                                }
+                                              }
+                                              const isDailyLimit = isYoutubeDailyLimitError(res);
+                                              if (isDailyLimit) {
+                                                setYoutubeDailyLimitModalOpen(true);
+                                              }
                                               await upsertJobRunForPlatform({
                                                 row,
                                                 platform: 'youtube',
                                                 ok: false,
-                                                error: res?.error || t('uploadFailed'),
+                                                error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : (res?.error || t('uploadFailed')),
                                                 publishAtUtcMs: payload.publishAt ?? null,
                                               });
                                             }
                                           } catch (e) {
+                                            handleNetworkError(e);
                                             console.error('Retry upload failed:', e);
+                                            if (reservationId) {
+                                              try {
+                                                await releaseQuota(reservationId);
+                                              } catch (err) {
+                                                console.error('Failed to release upload quota:', err);
+                                              }
+                                            }
+                                            const errMsg = String(e?.message ?? e);
+                                            const isDailyLimit = /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/i.test(errMsg);
+                                            if (isDailyLimit) {
+                                              setYoutubeDailyLimitModalOpen(true);
+                                            }
                                             await upsertJobRunForPlatform({
                                               row,
                                               platform: 'youtube',
                                               ok: false,
-                                              error: String(e),
+                                              error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : errMsg,
                                               publishAtUtcMs: payload.publishAt ?? null,
                                             });
                                           }
@@ -10169,13 +10818,20 @@ const add = async () => {
                                           if (alreadyDone) {
                                             continue;
                                           }
-                                          await window.api?.autouploadTriggerAssist?.({
-                                            filePath: row.filePath,
-                                            platform,
-                                          });
+                                          try {
+                                            await window.api?.autouploadTriggerAssist?.({
+                                              filePath: row.filePath,
+                                              platform,
+                                            });
+                                          } catch (e) {
+                                            handleNetworkError(e);
+                                          }
                                         }
                                       }
                                     }
+                                  }
+                                  if (latestSnapshot) {
+                                    setUsageSnapshot(latestSnapshot);
                                   }
                                   setSnack(t('retryingUploadCount', { count: failedSelectedRows.length }));
                                   void loadJobs();
@@ -10347,7 +11003,15 @@ const add = async () => {
           />
 
           {/* New Details Panel */}
-          <Box sx={{ width: interfaceSettings.detailsPanelWidth, height: 'calc(100vh - 200px)', minHeight: 600, flexShrink: 0 }}>
+          <Box
+            sx={{
+              width: interfaceSettings.detailsPanelWidth,
+              minHeight: 0,
+              flex: '0 0 auto',
+              alignSelf: 'stretch',
+              flexShrink: 0,
+            }}
+          >
             <DetailsPanel
               selectedRow={selectedRow}
               platformStatus={selectedRowPlatformStatus}
@@ -10613,6 +11277,7 @@ const add = async () => {
               }}
               onAssistNow={async (platform: 'youtube' | 'instagram' | 'tiktok') => {
                 if (!selectedRow) return;
+                if (!requireOnline()) return;
                 
                 try {
                   // Ensure job exists in jobs.json before triggering assist
@@ -10686,9 +11351,13 @@ const add = async () => {
                     // React to process the scheduledJobs update.
                     await new Promise(resolve => setTimeout(resolve, 50));
                   } else {
+                    if (res?.error) {
+                      handleNetworkError(res.error);
+                    }
                     setSnack(res?.error || t('failedToTriggerAssist'));
                   }
                 } catch (e) {
+                  handleNetworkError(e);
                   console.error('Assist now error:', e);
                   setSnack(t('failedToTriggerAssist'));
                 }
@@ -11152,10 +11821,14 @@ const add = async () => {
                             disabled={!ytConnected}
                             onClick={async () => {
                             if (!selectedRow) return;
+                            if (!requireOnline()) return;
                             if (!guardUploadAndScheduleAccess()) return;
+                            let uploadReservationId: string | null = null;
+                            const uploadReservedNote = t('uploadCreditsReserved', { count: 1 });
                             try {
-                              const snapshot = await consumeUpload(1);
-                              setUsageSnapshot(snapshot);
+                              const requestId = createRequestId();
+                              const reservation = await reserveUpload(requestId, 1);
+                              uploadReservationId = reservation.reservation_id;
                             } catch (err) {
                               handleBillingError(err, 'upload');
                               return;
@@ -11199,10 +11872,18 @@ const add = async () => {
                                 selfDeclaredMadeForKids: selectedRow.selfDeclaredMadeForKids ?? false,
                               } as const;
 
-                              setSnack(t('uploadingToPlatform', { platform: platformLabels.youtube }));
+                              setSnack(`${t('uploadingToPlatform', { platform: platformLabels.youtube })} ${uploadReservedNote}`);
                               const res: any = await window.api?.youtubeUpload?.(payload);
                               
                               if (res?.ok && res?.videoId) {
+                                if (uploadReservationId) {
+                                  try {
+                                    const snapshot = await finalizeQuota(uploadReservationId);
+                                    setUsageSnapshot(snapshot);
+                                  } catch (err) {
+                                    console.error('Failed to finalize upload quota:', err);
+                                  }
+                                }
                                 setSnack(t('uploadSuccessWithId', { platform: platformLabels.youtube, id: res.videoId }));
                                 await upsertJobRunForPlatform({
                                   row: selectedRow,
@@ -11212,12 +11893,27 @@ const add = async () => {
                                   publishAtUtcMs: payload.publishAt ?? null,
                                 });
                               } else {
-                                setSnack(res?.error || t('uploadFailedToPlatform', { platform: platformLabels.youtube }));
+                                if (res?.error) {
+                                  handleNetworkError(res.error);
+                                }
+                                if (uploadReservationId) {
+                                  try {
+                                    await releaseQuota(uploadReservationId);
+                                  } catch (err) {
+                                    console.error('Failed to release upload quota:', err);
+                                  }
+                                }
+                                const isDailyLimit = isYoutubeDailyLimitError(res);
+                                if (isDailyLimit) {
+                                  setYoutubeDailyLimitModalOpen(true);
+                                }
+                                const failureMsg = isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : (res?.error || t('uploadFailedToPlatform', { platform: platformLabels.youtube }));
+                                setSnack(`${failureMsg} ${t('uploadCreditsReleased', { count: 1 })}`);
                                 await upsertJobRunForPlatform({
                                   row: selectedRow,
                                   platform: 'youtube',
                                   ok: false,
-                                  error: res?.error || t('uploadFailed'),
+                                  error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : (res?.error || t('uploadFailed')),
                                   publishAtUtcMs: payload.publishAt ?? null,
                                 });
                               }
@@ -11231,6 +11927,14 @@ const add = async () => {
                               });
                             } catch (e: any) {
                               console.error(e);
+                              handleNetworkError(e);
+                              if (uploadReservationId) {
+                                try {
+                                  await releaseQuota(uploadReservationId);
+                                } catch (err) {
+                                  console.error('Failed to release upload quota:', err);
+                                }
+                              }
                               // Extract error message from YouTube API or IPC error
                               // IPC errors may have the message nested: "Error invoking remote method 'youtube:upload': Error: ..."
                               let errorMsg = e?.message || String(e);
@@ -11243,10 +11947,11 @@ const add = async () => {
                               }
                               
                               let userFriendlyMsg = t('uploadFailedToPlatform', { platform: platformLabels.youtube });
-                              
-                              if (errorMsg.includes('exceeded the number of videos')) {
+                              const isDailyLimit = /daily upload limit|upload limit|verify your account|phone verification|youtube verification|exceeded the number of videos|verification required|channel verification/i.test(errorMsg);
+                              if (isDailyLimit) {
                                 userFriendlyMsg = t('youtubeUploadLimitReached');
                                 setYoutubeLimitWarning(userFriendlyMsg);
+                                setYoutubeDailyLimitModalOpen(true);
                               } else if (errorMsg.includes('quota')) {
                                 userFriendlyMsg = t('youtubeQuotaExceeded');
                               } else if (errorMsg.includes('Not connected')) {
@@ -11255,12 +11960,12 @@ const add = async () => {
                                 userFriendlyMsg = t('uploadFailedToPlatformWithError', { platform: platformLabels.youtube, error: errorMsg });
                               }
                               
-                              setSnack(userFriendlyMsg);
+                              setSnack(`${userFriendlyMsg} ${t('uploadCreditsReleased', { count: 1 })}`);
                               await upsertJobRunForPlatform({
                                 row: selectedRow,
                                 platform: 'youtube',
                                 ok: false,
-                                error: userFriendlyMsg,
+                                error: isDailyLimit ? t('youtubeDailyLimitBlockedStatus') : userFriendlyMsg,
                                 publishAtUtcMs,
                               });
                               updateRow(selectedRow.id, (r) => {
@@ -11743,6 +12448,7 @@ const add = async () => {
         {/* Command Bar - conditionally rendered at bottom */}
         {interfaceSettings.commandBarPosition === 'bottom' && (
           <CommandBar
+            position="bottom"
             onAddClick={() => setAddDialogOpen(true)}
             onPlanClick={() => {
               if (!guardUploadAndScheduleAccess()) return;
@@ -11792,6 +12498,7 @@ const add = async () => {
                 setSnack(t('failedToReconnect'));
               }
             }}
+            onDisconnect={disconnectYouTube}
             dark={dark}
           />
         )}

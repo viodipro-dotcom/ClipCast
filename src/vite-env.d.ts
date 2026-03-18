@@ -12,6 +12,7 @@ export type PipelinePayload = {
   mode: 'files' | 'folder';
   paths: string[];
   variant?: string;
+  auth?: { accessToken?: string; functionsUrl?: string };
 };
 
 export type PipelineRunResult = { runId: string; code: number };
@@ -106,10 +107,22 @@ declare global {
       settingsGet: () => Promise<{ uiLanguage: string; uiLanguageLabel?: string }>;
       settingsSet: (payload: { uiLanguage?: string; uiLanguageLabel?: string }) => Promise<{ uiLanguage: string; uiLanguageLabel?: string }>;
 
+      // secrets (keytar-backed)
+      secretsGetYouTubeTokens: () => Promise<{ ok: boolean; tokens: { redacted: true } | null }>;
+      secretsSetYouTubeTokens: (tokens: Record<string, unknown>) => Promise<{ ok: boolean }>;
+      secretsClearYouTubeTokens: () => Promise<{ ok: boolean }>;
+      secretsGetGoogleOAuthClient: () => Promise<{ ok: boolean; clientId: string | null; hasClientSecret: boolean }>;
+      secretsSetGoogleOAuthClient: (clientId: string, clientSecret?: string) => Promise<{ ok: boolean }>;
+      secretsClearGoogleOAuthClient: () => Promise<{ ok: boolean }>;
+
+      // auth
+      authSetSupabaseAccessToken: (token: string, functionsUrl?: string) => Promise<{ ok: boolean }>;
+
       // outputs folder (Developer Mode)
       getOutputsDir: () => Promise<{ ok: boolean; path: string }>;
       getDefaultOutputsDir: () => Promise<{ ok: boolean; path: string }>;
       pickOutputsDir: () => Promise<{ ok: boolean; path: string | null }>;
+      pickPythonPath: () => Promise<{ ok: boolean; path: string | null }>;
       setOutputsDir: (path: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
       resetOutputsDir: () => Promise<{ ok: boolean; path: string }>;
       moveOutputsToNewDir: (payload: { fromDir: string; toDir: string; deleteAfterCopy?: boolean }) => Promise<{
@@ -131,6 +144,8 @@ declare global {
         deleteArchivedAfterDays?: number;
         autoCleanOutputArtifacts?: boolean;
         artifactRetentionDays?: number;
+        computeBackendPreference?: 'auto' | 'prefer_gpu' | 'force_cpu';
+        pythonPath?: string;
       }>;
       setDeveloperOptions: (payload: {
         autoCleanupOutputReports?: boolean;
@@ -141,7 +156,43 @@ declare global {
         deleteArchivedAfterDays?: number;
         autoCleanOutputArtifacts?: boolean;
         artifactRetentionDays?: number;
+        computeBackendPreference?: 'auto' | 'prefer_gpu' | 'force_cpu';
+        pythonPath?: string;
       }) => Promise<unknown>;
+      getComputeBackend: () => Promise<{
+        availableGpu: boolean;
+        details: {
+          python?: string;
+          platform?: string;
+          torch_installed?: boolean;
+          torch_version?: string | null;
+          cuda_available?: boolean;
+          cuda_version?: string | null;
+          gpu_count?: number;
+          gpu_name?: string | null;
+          vram_total_mb?: number;
+          error?: string | null;
+        };
+        error?: string | null;
+        pythonPath?: string;
+      }>;
+      refreshComputeBackend: () => Promise<{
+        availableGpu: boolean;
+        details: {
+          python?: string;
+          platform?: string;
+          torch_installed?: boolean;
+          torch_version?: string | null;
+          cuda_available?: boolean;
+          cuda_version?: string | null;
+          gpu_count?: number;
+          gpu_name?: string | null;
+          vram_total_mb?: number;
+          error?: string | null;
+        };
+        error?: string | null;
+        pythonPath?: string;
+      }>;
       retentionRun: () => Promise<void>;
 
       // custom ai presets
@@ -165,6 +216,23 @@ declare global {
       }) => Promise<any>;
       youtubeOpenUserData: () => Promise<any>;
       youtubeValidateCredentials: () => Promise<any>;
+
+      // app update (electron-updater)
+      updateCheck: () => Promise<void>;
+      updateDownload: () => Promise<void>;
+      updateInstall: () => Promise<void>;
+      updateGetStatus: () => Promise<UpdateStatus>;
+      updateDismiss: () => Promise<{ ok: boolean; nextPromptAtMs?: number } | { disabled: true; reason?: string }>;
+      onUpdateStatus: (cb: (status: UpdateStatus) => void) => () => void;
     };
   }
 }
+
+export type UpdateStatus = {
+  state?: 'idle' | 'checking' | 'available' | 'none' | 'downloading' | 'ready' | 'error';
+  info?: { version?: string; releaseDate?: string; releaseNotes?: string } | null;
+  progress?: { percent?: number; bytesPerSecond?: number; transferred?: number; total?: number } | null;
+  error?: string | null;
+  disabled?: boolean;
+  reason?: string;
+};

@@ -3,6 +3,8 @@ import { Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typograp
 import SettingsIcon from '@mui/icons-material/Settings';
 import { useTranslation } from 'react-i18next';
 
+const logoUrl = new URL('../../assets/logo option 1.png', import.meta.url).href;
+
 export interface CommandBarProps {
   onAddClick: () => void;
   onPlanClick: () => void;
@@ -17,7 +19,10 @@ export interface CommandBarProps {
   onCustomAIClick?: () => void;
   onTestConnection?: () => void;
   onReconnect?: () => void;
+  onDisconnect?: () => void;
   dark?: boolean;
+  /** When 'top', bar is flush to top with square top corners; when 'bottom', square bottom corners. */
+  position?: 'top' | 'bottom';
 }
 
 export default function CommandBar({
@@ -34,7 +39,9 @@ export default function CommandBar({
   onCustomAIClick,
   onTestConnection,
   onReconnect,
+  onDisconnect,
   dark: _dark = false,
+  position = 'top',
 }: CommandBarProps) {
   const { t } = useTranslation();
   const [menuAnchorPosition, setMenuAnchorPosition] = React.useState<{ top: number; left: number } | null>(null);
@@ -71,6 +78,10 @@ export default function CommandBar({
         borderColor: 'divider',
         bgcolor: 'background.paper',
         borderRadius: 2,
+        borderTopLeftRadius: position === 'top' ? 0 : undefined,
+        borderTopRightRadius: position === 'top' ? 0 : undefined,
+        borderBottomLeftRadius: position === 'bottom' ? 0 : undefined,
+        borderBottomRightRadius: position === 'bottom' ? 0 : undefined,
       }}
     >
       {/* Left side: Logo + Title + Actions */}
@@ -78,7 +89,7 @@ export default function CommandBar({
         {/* Logo */}
         <Box
           component="img"
-          src="/logo.png"
+          src={logoUrl}
           alt="ClipCast"
           className="gradient-animated"
           sx={{
@@ -171,6 +182,16 @@ export default function CommandBar({
               }}
             >
               🔄 {t('reconnect')}
+            </MenuItem>
+          )}
+          {youtubeConnected && onDisconnect && (
+            <MenuItem
+              onClick={() => {
+                onDisconnect();
+                handleYoutubeMenuClose();
+              }}
+            >
+              ⛔ {t('disconnectYouTube')}
             </MenuItem>
           )}
         </Menu>

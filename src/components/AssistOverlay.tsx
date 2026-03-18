@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { Badge, Box } from '@mui/material';
-import SkipNextIcon from '@mui/icons-material/SkipNext';
 import { useTranslation } from 'react-i18next';
+import logoOption1 from '../../assets/logo option 1.png';
 
 export default function AssistOverlay() {
   const { t } = useTranslation();
@@ -169,28 +169,37 @@ export default function AssistOverlay() {
             borderRadius: '50%',
             boxSizing: 'border-box',
             padding: 0,
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-            background: 'rgba(99, 102, 241, 0.88)',
-            color: '#fff',
+            border: 'none',
+            backgroundColor: 'transparent',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             minWidth: 0,
             minHeight: 0,
             cursor: busy ? 'progress' : 'pointer',
-            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.35)',
+            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.45)',
             outline: 'none',
-            transition: 'transform 120ms ease, box-shadow 120ms ease, background 120ms ease',
+            transition: 'transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease',
             '&:hover': {
               transform: 'scale(1.03)',
-              background: 'rgba(99, 102, 241, 0.98)',
+              boxShadow: '0 8px 20px rgba(0, 0, 0, 0.55)',
             },
             '&:active': {
               transform: 'scale(0.98)',
             },
           }}
         >
-          <SkipNextIcon sx={{ fontSize: 30 }} />
+          <Box
+            component="img"
+            src={logoOption1}
+            alt={t('assistNext')}
+            sx={{
+              width: 64,
+              height: 64,
+              borderRadius: '50%',
+              display: 'block',
+            }}
+          />
         </Box>
       </Badge>
     </Box>

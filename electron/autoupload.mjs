@@ -408,7 +408,7 @@ async function uploadYouTube(job) {
 
   sendStatus({ id: job.id, platform: 'youtube', status: 'Processing', message: 'Uploading to YouTube...' });
   try {
-    if (!isConnected()) {
+    if (!await isConnected()) {
       const msg = 'YouTube not connected. Click "Connect YouTube" first.';
       log(`[auto-upload] ${msg}`);
       sendStatus({ id: job.id, platform: 'youtube', status: 'Error', message: msg });

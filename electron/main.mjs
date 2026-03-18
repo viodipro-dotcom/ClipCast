@@ -6,12 +6,47 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
+import {
+  clearGoogleOAuthClient,
+  clearYouTubeTokens,
+  getGoogleOAuthClient,
+  getYouTubeTokens,
+  migrateLegacySecrets,
+  redactSecrets,
+  setGoogleOAuthClient,
+  setYouTubeTokens,
+} from './secrets.mjs';
+import { clearYouTubeTokensCache } from './youtube.mjs';
+import * as updateService from './updateService.mjs';
+import {
+  resolveBundledPythonExe,
+  runPythonSmokeTest,
+  writePythonDiagnosticsLog,
+} from './pythonRuntime.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // project root (one level above electron/)
 const APP_ROOT = path.join(__dirname, '..');
+
+const APP_DATA_NAME = 'ClipCast';
+const DEV_APP_DATA_NAME = 'ClipCast-dev';
+
+function configureUserDataPath() {
+  try {
+    const base = app.getPath('appData');
+    const name = app.isPackaged ? APP_DATA_NAME : DEV_APP_DATA_NAME;
+    const target = path.join(base, name);
+    if (app.getPath('userData') !== target) {
+      app.setPath('userData', target);
+    }
+  } catch (e) {
+    console.warn('[main] Failed to set userData path', e);
+  }
+}
+
+configureUserDataPath();
 
 const PROTOCOL_SCHEME = 'clipcast';
 
@@ -23,11 +58,45 @@ let setAutoUploadWindowFn = null;
 let setAssistOverlayWindowFn = null;
 let refreshAssistOverlayStateFn = null;
 let setYouTubeWindowFn = null;
+let computeBackendCache = null;
 let batchNotificationTimer = null;
+
+process.on('unhandledRejection', (reason) => {
+  try {
+    console.warn('[main] unhandledRejection', reason);
+  } catch {
+    // ignore
+  }
+});
 let lastNotificationCount = { total: 0, instagram: 0, tiktok: 0 };
 let lastNotificationTime = 0;
 let ipcHandlersInitialized = false;
 let pendingDeepLinkUrl = null;
+let supabaseAccessToken = '';
+let supabaseFunctionsUrlOverride = '';
+let updateNextPromptTimer = null;
+
+function decodeJwtPayload(token) {
+  if (typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if (parts.length < 2) return null;
+  const payloadPart = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const padded = payloadPart + '='.repeat((4 - (payloadPart.length % 4)) % 4);
+  try {
+    const json = Buffer.from(padded, 'base64').toString('utf8');
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+function deriveSupabaseFunctionsUrl(token) {
+  const payload = decodeJwtPayload(token);
+  const iss = typeof payload?.iss === 'string' ? payload.iss : '';
+  if (!iss) return '';
+  const base = iss.replace(/\/auth\/v1\/?$/i, '');
+  return base ? `${base.replace(/\/+$/, '')}/functions/v1` : '';
+}
 
 function getDeepLinkFromArgv(argv) {
   if (!Array.isArray(argv)) return null;
@@ -49,7 +118,7 @@ function sendPendingDeepLinkToRenderer() {
 }
 
 function focusWindowAndSendDeepLink(url) {
-  console.log('[deep-link] received:', url);
+  console.log('[deep-link] received:', redactSecrets(url));
   pendingDeepLinkUrl = url;
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -81,6 +150,44 @@ function registerDeepLinkFallback(win) {
   };
   win.webContents.once('did-finish-load', trySend);
   win.webContents.once('dom-ready', trySend);
+}
+
+function scheduleUpdateCheckFromConfig() {
+  if (!app.isPackaged) return;
+  if (updateNextPromptTimer) {
+    clearTimeout(updateNextPromptTimer);
+    updateNextPromptTimer = null;
+  }
+  const { nextPromptAtMs } = getUpdaterConfig();
+  const now = Date.now();
+  if (!nextPromptAtMs || now >= nextPromptAtMs) {
+    try {
+      console.log('[update] Running scheduled check (now >= nextPromptAtMs).');
+      updateService.check();
+    } catch (e) {
+      console.error('[update] Error during scheduled check:', e);
+    }
+    return;
+  }
+  const delay = Math.max(0, Math.min(nextPromptAtMs - now, 24 * 60 * 60 * 1000));
+  if (delay === 0) {
+    try {
+      console.log('[update] Running scheduled check (delay=0).');
+      updateService.check();
+    } catch (e) {
+      console.error('[update] Error during scheduled check (delay=0):', e);
+    }
+    return;
+  }
+  console.log('[update] Scheduling next update check in', Math.round(delay / 1000), 'seconds');
+  updateNextPromptTimer = setTimeout(() => {
+    try {
+      console.log('[update] Timer fired, running update check.');
+      updateService.check();
+    } catch (e) {
+      console.error('[update] Error during timed update check:', e);
+    }
+  }, delay);
 }
 
 // Single instance + protocol registration
@@ -135,11 +242,101 @@ function safeMkdir(p) {
 const REPORTS_RETENTION_DAYS = 30;
 const MAX_RUN_LOGS = 20;
 const MAX_STACK_FRAMES = 6;
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+function getBundledPythonPath() {
+  if (!app.isPackaged) return null;
+  try {
+    const exe = resolveBundledPythonExe();
+    return exe && exe !== 'python' ? exe : null;
+  } catch {
+    return null;
+  }
+}
+
+function getBundledFfmpegPaths() {
+  const base = process.resourcesPath;
+  const ffmpeg = path.join(base, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
+  const ffprobe = path.join(base, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
+  return { ffmpeg, ffprobe };
+}
+
+/**
+ * FIX: In packaged builds, avoid spawning via cmd.exe / shell.
+ * Spawn the embedded Python directly with args array (shell: false).
+ */
+function fileExists(p) {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
+
+function spawnPipelineProcess(params) {
+  const {
+    pythonExe,
+    runPipelinePy,
+    args,
+    env = {},
+    cwd,
+    onStdout,
+    onStderr,
+  } = params;
+
+  if (!fileExists(pythonExe)) {
+    throw new Error(`[pipeline] python exe missing: ${pythonExe}`);
+  }
+  if (!fileExists(runPipelinePy)) {
+    throw new Error(`[pipeline] run_pipeline.py missing: ${runPipelinePy}`);
+  }
+
+  const argv = ['-u', runPipelinePy, ...args];
+  const child = spawn(pythonExe, argv, {
+    cwd: cwd ?? path.dirname(runPipelinePy),
+    env: { ...process.env, ...env },
+    windowsHide: true,
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  if (onStdout) child.stdout?.on('data', (d) => onStdout(String(d)));
+  if (onStderr) child.stderr?.on('data', (d) => onStderr(String(d)));
+
+  child.on('error', (err) => {
+    const info = [
+      `[pipeline] spawn error: ${err?.message ?? err}`,
+      `[pipeline] pythonExe=${pythonExe}`,
+      `[pipeline] runPipelinePy=${runPipelinePy}`,
+      `[pipeline] argv=${JSON.stringify(argv)}`,
+      `[pipeline] isPackaged=${app.isPackaged}`,
+      `[pipeline] cwd=${cwd ?? path.dirname(runPipelinePy)}`,
+    ].join('\n');
+    console.error(info);
+  });
+
+  return child;
+}
 
 // Default outputs base (same as previous hardcoded behavior)
 const DEFAULT_OUTPUTS_DIR = path.join(APP_ROOT, 'yt_pipeline', 'outputs');
 
 const OUTPUTS_SUBDIRS = ['Audio', 'Transcripts', 'Metadata', 'Exports', 'Reports'];
+
+function getPipelineDir() {
+  if (app.isPackaged) {
+    const unpackedDir = path.join(process.resourcesPath, 'app.asar.unpacked', 'yt_pipeline');
+    if (fs.existsSync(unpackedDir)) return unpackedDir;
+  }
+  return path.join(APP_ROOT, 'yt_pipeline');
+}
+
+function getDefaultOutputsDir() {
+  if (app.isPackaged && app.isReady()) {
+    return path.join(app.getPath('userData'), 'outputs');
+  }
+  return DEFAULT_OUTPUTS_DIR;
+}
 
 function getAppConfigPath() {
   return path.join(app.getPath('userData'), 'app_config.json');
@@ -170,6 +367,36 @@ function saveAppConfig(config) {
   }
 }
 
+function getUpdaterConfig() {
+  const cfg = loadAppConfig();
+  const raw = cfg && typeof cfg === 'object' ? cfg.updater : null;
+  if (!raw || typeof raw !== 'object') {
+    return { nextPromptAtMs: 0 };
+  }
+  const n = Number(raw.nextPromptAtMs || 0);
+  return { nextPromptAtMs: Number.isFinite(n) && n > 0 ? n : 0 };
+}
+
+function setUpdaterNextPromptAt(nextPromptAtMs) {
+  try {
+    const cfg = loadAppConfig();
+    const current = cfg && typeof cfg === 'object' ? cfg : {};
+    const existingUpdater = current.updater && typeof current.updater === 'object' ? current.updater : {};
+    const value = Number(nextPromptAtMs) || 0;
+    const next = {
+      ...current,
+      updater: {
+        ...existingUpdater,
+        nextPromptAtMs: value > 0 ? value : 0,
+      },
+    };
+    saveAppConfig(next);
+    return getUpdaterConfig();
+  } catch (e) {
+    console.error('[main] Error setting updater.nextPromptAtMs:', e);
+    return getUpdaterConfig();
+  }
+}
 const DEFAULT_DEVELOPER_OPTIONS = {
   autoCleanupOutputReports: true,
   debugMode: false,
@@ -181,6 +408,8 @@ const DEFAULT_DEVELOPER_OPTIONS = {
   // Auto-clean output artifacts (Audio/Exports/Metadata/Transcripts only; originals not touched)
   autoCleanOutputArtifacts: false,
   artifactRetentionDays: 30,
+  computeBackendPreference: 'auto',
+  pythonPath: '',
 };
 
 function clampDays(n, def) {
@@ -194,6 +423,9 @@ function getDeveloperOptions() {
   const config = loadAppConfig();
   const opts = config.developerOptions;
   if (!opts || typeof opts !== 'object') return { ...DEFAULT_DEVELOPER_OPTIONS };
+  const pref = typeof opts.computeBackendPreference === 'string' ? opts.computeBackendPreference : 'auto';
+  const normalizedPref = ['auto', 'prefer_gpu', 'force_cpu'].includes(pref) ? pref : 'auto';
+  const pythonPath = typeof opts.pythonPath === 'string' ? opts.pythonPath.trim() : '';
   return {
     autoCleanupOutputReports: opts.autoCleanupOutputReports !== false,
     debugMode: Boolean(opts.debugMode),
@@ -203,12 +435,16 @@ function getDeveloperOptions() {
     deleteArchivedAfterDays: clampDays(opts.deleteArchivedAfterDays, DEFAULT_DEVELOPER_OPTIONS.deleteArchivedAfterDays),
     autoCleanOutputArtifacts: Boolean(opts.autoCleanOutputArtifacts),
     artifactRetentionDays: clampDays(opts.artifactRetentionDays, DEFAULT_DEVELOPER_OPTIONS.artifactRetentionDays),
+    computeBackendPreference: normalizedPref,
+    pythonPath,
   };
 }
 
 function setDeveloperOptions(payload) {
   if (!payload || typeof payload !== 'object') return getDeveloperOptions();
   const current = getDeveloperOptions();
+  const validPrefs = ['auto', 'prefer_gpu', 'force_cpu'];
+  const pythonPath = typeof payload.pythonPath === 'string' ? payload.pythonPath.trim() : undefined;
   const next = {
     ...current,
     ...(typeof payload.autoCleanupOutputReports === 'boolean' ? { autoCleanupOutputReports: payload.autoCleanupOutputReports } : {}),
@@ -219,9 +455,156 @@ function setDeveloperOptions(payload) {
     ...(typeof payload.deleteArchivedAfterDays !== 'undefined' ? { deleteArchivedAfterDays: clampDays(payload.deleteArchivedAfterDays, current.deleteArchivedAfterDays) } : {}),
     ...(typeof payload.autoCleanOutputArtifacts === 'boolean' ? { autoCleanOutputArtifacts: payload.autoCleanOutputArtifacts } : {}),
     ...(typeof payload.artifactRetentionDays !== 'undefined' ? { artifactRetentionDays: clampDays(payload.artifactRetentionDays, current.artifactRetentionDays) } : {}),
+    ...(typeof payload.computeBackendPreference === 'string' && validPrefs.includes(payload.computeBackendPreference)
+      ? { computeBackendPreference: payload.computeBackendPreference }
+      : {}),
+    ...(typeof pythonPath === 'string' ? { pythonPath } : {}),
   };
   saveAppConfig({ developerOptions: next });
   return next;
+}
+
+function getPipelinePythonPath() {
+  if (app.isPackaged) {
+    try {
+      return resolveBundledPythonExe();
+    } catch {
+      return '';
+    }
+  }
+
+  const opts = getDeveloperOptions();
+  if (opts?.pythonPath && fs.existsSync(opts.pythonPath)) {
+    return opts.pythonPath;
+  }
+
+  let python = process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)
+    ? process.env.PYTHON_PATH
+    : '';
+
+  if (!python) {
+    const candidates = [
+      path.join(process.env.USERPROFILE || '', 'miniconda3', 'envs', 'yt-gpu', 'python.exe'),
+      path.join(process.env.USERPROFILE || '', 'anaconda3', 'envs', 'yt-gpu', 'python.exe'),
+      path.join(process.env.CONDA_PREFIX || '', 'python.exe'),
+    ];
+    for (const candidate of candidates) {
+      if (candidate && fs.existsSync(candidate)) {
+        python = candidate;
+        break;
+      }
+    }
+  }
+
+  if (!python) {
+    python = 'python';
+  }
+
+  return python;
+}
+
+async function detectComputeBackend() {
+  const python = getPipelinePythonPath();
+  const pipelineDir = getPipelineDir();
+  const script = path.join(pipelineDir, 'tools', 'gpu_probe.py');
+
+  const base = {
+    availableGpu: false,
+    details: {},
+    error: null,
+    pythonPath: python,
+  };
+
+  if (!python) {
+    return { ...base, error: 'No Python path available (bundled runtime missing in packaged build)' };
+  }
+
+  if (!fs.existsSync(script)) {
+    return {
+      ...base,
+      error: 'gpu_probe.py not found in yt_pipeline/tools',
+    };
+  }
+
+  return await new Promise((resolve) => {
+    try {
+      const child = spawn(python, ['-u', script], {
+        cwd: pipelineDir,
+        shell: false,
+        env: {
+          ...process.env,
+        },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout.on('data', (d) => {
+        stdout += d.toString();
+      });
+      child.stderr.on('data', (d) => {
+        stderr += d.toString();
+      });
+
+      child.on('error', (err) => {
+        resolve({
+          ...base,
+          error: String(err),
+        });
+      });
+
+      child.on('close', () => {
+        const trimmedOut = stdout.trim();
+        if (!trimmedOut) {
+          resolve({
+            ...base,
+            error: stderr.trim() || 'No output from gpu_probe.py',
+          });
+          return;
+        }
+        try {
+          const parsed = JSON.parse(trimmedOut);
+          const availableGpu = Boolean(parsed && parsed.cuda_available && (parsed.gpu_count || 0) > 0);
+          resolve({
+            availableGpu,
+            details: parsed || {},
+            error: parsed && typeof parsed.error === 'string' && parsed.error ? parsed.error : (stderr.trim() || null),
+            pythonPath: python,
+          });
+        } catch (e) {
+          resolve({
+            ...base,
+            error: `Failed to parse gpu_probe output: ${String(e)}`,
+          });
+        }
+      });
+    } catch (e) {
+      resolve({
+        ...base,
+        error: String(e),
+      });
+    }
+  });
+}
+
+async function getComputeBackend() {
+  if (computeBackendCache) return computeBackendCache;
+  try {
+    computeBackendCache = await detectComputeBackend();
+  } catch (e) {
+    computeBackendCache = {
+      availableGpu: false,
+      details: {},
+      error: String(e),
+      pythonPath: getPipelinePythonPath(),
+    };
+  }
+  return computeBackendCache;
+}
+
+async function refreshComputeBackend() {
+  computeBackendCache = null;
+  return await getComputeBackend();
 }
 
 /** Returns the configured outputs base directory (absolute). Ensures it exists. */
@@ -230,7 +613,7 @@ function getOutputsBaseDir() {
   const raw = config.outputsDir;
   const dir = typeof raw === 'string' && raw.trim() && path.isAbsolute(path.resolve(raw))
     ? path.resolve(raw.trim())
-    : DEFAULT_OUTPUTS_DIR;
+    : getDefaultOutputsDir();
   safeMkdir(dir);
   return dir;
 }
@@ -265,10 +648,11 @@ function formatTechLog(level, component, message, keys = {}) {
     String(now.getMilliseconds()).padStart(3, '0');
   const lev = String(level).toUpperCase().slice(0, 5);
   const comp = String(component).slice(0, 12).padEnd(12);
-  let msg = String(message ?? '').replace(/\r?\n/g, ' ').trim().slice(0, 500);
+  let msg = String(redactSecrets(message ?? '') ?? '').replace(/\r?\n/g, ' ').trim().slice(0, 500);
   const parts = [];
-  if (keys && typeof keys === 'object' && !Array.isArray(keys)) {
-    for (const [k, v] of Object.entries(keys)) {
+  const safeKeys = redactSecrets(keys);
+  if (safeKeys && typeof safeKeys === 'object' && !Array.isArray(safeKeys)) {
+    for (const [k, v] of Object.entries(safeKeys)) {
       if (k === '' || v === undefined) continue;
       const val = String(v);
       const needsQuotes = /[\s|="]/.test(val);
@@ -736,6 +1120,8 @@ async function createWindow() {
   }
 
   const devUrl = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
+  const prodHtmlPath = path.join(APP_ROOT, 'dist', 'index.html');
+  console.log('[main] loading', !app.isPackaged ? devUrl : prodHtmlPath);
 
   if (!app.isPackaged) {
     try {
@@ -753,7 +1139,25 @@ async function createWindow() {
       );
     }
   } else {
-    win.loadFile(path.join(APP_ROOT, 'dist', 'index.html'));
+    win.loadFile(prodHtmlPath);
+  }
+
+  win.webContents.on('did-fail-load', (...args) => {
+    console.error('[main] [did-fail-load]', ...args);
+  });
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[main] [render-gone]', details);
+  });
+  win.webContents.on('crashed', () => {
+    console.error('[main] [renderer-crashed]');
+  });
+
+  if (!app.isPackaged) {
+    try {
+      win.webContents.openDevTools({ mode: 'detach' });
+    } catch {
+      // ignore devtools failures
+    }
   }
 
   return win;
@@ -766,6 +1170,31 @@ async function initIpcHandlers() {
     return;
   }
   ipcHandlersInitialized = true;
+
+  // Update service (auto-updater): only active when packaged
+  updateService.init({ getWindow: () => mainWindow, packaged: app.isPackaged });
+  ipcMain.handle('update:check', () => {
+    updateService.check();
+    return undefined;
+  });
+  ipcMain.handle('update:download', () => {
+    updateService.download();
+    return undefined;
+  });
+  ipcMain.handle('update:install', () => {
+    updateService.install();
+    return undefined;
+  });
+  ipcMain.handle('update:getStatus', () => updateService.getStatus());
+  ipcMain.handle('update:dismiss', () => {
+    if (!app.isPackaged) {
+      return { disabled: true, reason: 'dev' };
+    }
+    const now = Date.now();
+    const next = setUpdaterNextPromptAt(now + ONE_HOUR_MS);
+    scheduleUpdateCheckFromConfig();
+    return { ok: true, nextPromptAtMs: next.nextPromptAtMs };
+  });
 
   // Register fallback handlers first to ensure they're always available
   // These will be overridden by autoupload.mjs if it loads successfully
@@ -1083,6 +1512,19 @@ async function initIpcHandlers() {
     return { ok: true, path: result.filePaths[0] };
   });
 
+  ipcMain.handle('settings:pickPythonPath', async () => {
+    const filters = process.platform === 'win32'
+      ? [{ name: 'Python', extensions: ['exe'] }, { name: 'All Files', extensions: ['*'] }]
+      : [{ name: 'All Files', extensions: ['*'] }];
+    const result = await dialog.showOpenDialog(mainWindow || undefined, {
+      properties: ['openFile'],
+      title: 'Select Python executable',
+      filters,
+    });
+    if (result.canceled || !result.filePaths?.length) return { ok: false, path: null };
+    return { ok: true, path: result.filePaths[0] };
+  });
+
   ipcMain.handle('settings:getOutputsDir', () => {
     return { ok: true, path: getOutputsBaseDir() };
   });
@@ -1123,9 +1565,51 @@ async function initIpcHandlers() {
 
   ipcMain.handle('settings:getDeveloperOptions', () => getDeveloperOptions());
   ipcMain.handle('settings:setDeveloperOptions', (_e, payload) => setDeveloperOptions(payload));
+  ipcMain.handle('settings:getComputeBackend', async () => getComputeBackend());
+  ipcMain.handle('settings:refreshComputeBackend', async () => refreshComputeBackend());
 
   ipcMain.handle('settings:getDefaultOutputsDir', () => {
-    return { ok: true, path: DEFAULT_OUTPUTS_DIR };
+    return { ok: true, path: getDefaultOutputsDir() };
+  });
+
+  // secrets (keytar-backed)
+  ipcMain.handle('secrets:getYouTubeTokens', async () => {
+    const tokens = await getYouTubeTokens();
+    return { ok: true, tokens: tokens ? { redacted: true } : null };
+  });
+  ipcMain.handle('secrets:setYouTubeTokens', async (_e, tokens) => {
+    await setYouTubeTokens(tokens);
+    return { ok: true };
+  });
+  ipcMain.handle('secrets:clearYouTubeTokens', async () => {
+    await clearYouTubeTokens();
+    clearYouTubeTokensCache();
+    return { ok: true };
+  });
+
+  ipcMain.handle('secrets:getGoogleOAuthClient', async () => {
+    const creds = await getGoogleOAuthClient();
+    return {
+      ok: true,
+      clientId: creds?.clientId ?? null,
+      hasClientSecret: Boolean(creds?.clientSecret),
+    };
+  });
+  ipcMain.handle('secrets:setGoogleOAuthClient', async (_e, clientId, clientSecret) => {
+    await setGoogleOAuthClient(String(clientId ?? '').trim(), clientSecret);
+    return { ok: true };
+  });
+  ipcMain.handle('secrets:clearGoogleOAuthClient', async () => {
+    await clearGoogleOAuthClient();
+    return { ok: true };
+  });
+
+  ipcMain.handle('auth:setSupabaseAccessToken', async (_e, token, functionsUrl) => {
+    supabaseAccessToken = typeof token === 'string' ? token : '';
+    if (typeof functionsUrl === 'string' && functionsUrl.trim()) {
+      supabaseFunctionsUrlOverride = functionsUrl.trim();
+    }
+    return { ok: true };
   });
 
   ipcMain.handle('settings:moveOutputsToNewDir', async (_e, { fromDir, toDir, deleteAfterCopy = false }) => {
@@ -1916,6 +2400,52 @@ async function initIpcHandlers() {
   console.log('[assist-center] IPC handlers registered');
 }
 
+async function ensureCriticalResourcesPresent() {
+  if (!app.isPackaged) {
+    return;
+  }
+
+  const problems = [];
+
+  const pythonPath = getBundledPythonPath();
+  if (!pythonPath || !fs.existsSync(pythonPath)) {
+    problems.push('Embedded Python runtime (resources/python) is missing or invalid.');
+  }
+
+  const pipelineDir = getPipelineDir();
+  const pipelineScript = path.join(pipelineDir, 'run_pipeline.py');
+  if (!fs.existsSync(pipelineDir) || !fs.existsSync(pipelineScript)) {
+    problems.push('Python backend (yt_pipeline/run_pipeline.py) is missing from installation.');
+  }
+
+  const { ffmpeg, ffprobe } = getBundledFfmpegPaths();
+  if (!fs.existsSync(ffmpeg)) {
+    problems.push('Internal ffmpeg executable (resources/bin/ffmpeg.exe) is missing.');
+  }
+  if (!fs.existsSync(ffprobe)) {
+    problems.push('Internal ffprobe executable (resources/bin/ffprobe.exe) is missing.');
+  }
+
+  if (problems.length > 0) {
+    const message = [
+      'ClipCast is not correctly installed.',
+      '',
+      ...problems.map((p) => `- ${p}`),
+      '',
+      'Please reinstall ClipCast from the official installer or contact support.',
+    ].join('\n');
+
+    try {
+      dialog.showErrorBox('ClipCast - Installation error', message);
+    } catch {
+      // ignore dialog errors
+    }
+
+    log('ERROR', 'startup', 'Critical resources missing', { problems });
+    app.quit();
+  }
+}
+
 app.whenReady().then(async () => {
   // Capture any deep link passed on first launch
   const initialDeepLink = getDeepLinkFromArgv(process.argv);
@@ -1923,8 +2453,18 @@ app.whenReady().then(async () => {
     pendingDeepLinkUrl = initialDeepLink;
   }
 
+  await ensureCriticalResourcesPresent();
+
   // Register IPC handlers FIRST (before window creation)
   await initIpcHandlers();
+
+  try {
+    await migrateLegacySecrets({
+      log: (line) => console.log(String(line || '')),
+    });
+  } catch (e) {
+    console.warn('[secrets] migration failed:', redactSecrets(e?.message || e));
+  }
 
   mainWindow = await createWindow();
   
@@ -1936,6 +2476,11 @@ app.whenReady().then(async () => {
 
   // Fallback: deliver pending deep link on did-finish-load and dom-ready so renderer always receives it
   registerDeepLinkFallback(mainWindow);
+
+  // Scheduled update check on startup when packaged (respects \"Later\" deferrals)
+  if (app.isPackaged) {
+    scheduleUpdateCheckFromConfig();
+  }
 
   // Wire window references for event emission
   setAutoUploadWindowFn?.(mainWindow);
@@ -2149,13 +2694,22 @@ function createTray() {
 
   // 1) Try loading a project icon first (best quality)
   try {
-    const preferredIconCandidates = [
-      // Logo (play + broadcast) – primary tray icon
-      path.join(APP_ROOT, 'assets', 'logo option 1.png'),
-      // Fallbacks
-      path.join(APP_ROOT, 'assets', 'icon_01.png'),
-      path.join(APP_ROOT, 'assets', 'tray-icon.png'),
-    ];
+    const assetRoots = [];
+    if (app.isPackaged) {
+      assetRoots.push(path.join(process.resourcesPath, 'assets'));
+    }
+    assetRoots.push(path.join(APP_ROOT, 'assets'));
+
+    const preferredIconCandidates = [];
+    for (const root of assetRoots) {
+      preferredIconCandidates.push(
+        // Logo (play + broadcast) – primary tray icon
+        path.join(root, 'logo option 1.png'),
+        // Fallbacks
+        path.join(root, 'icon_01.png'),
+        path.join(root, 'tray-icon.png')
+      );
+    }
 
     for (const p of preferredIconCandidates) {
       try {
@@ -2389,7 +2943,9 @@ async function createAssistOverlayWindow() {
     transparent: true,
     alwaysOnTop: true,
     skipTaskbar: true,
-    focusable: false,
+    // Allow the overlay window to receive mouse clicks reliably in all environments.
+    // We keep it small, always-on-top and frameless, but it must be focusable for click handling.
+    focusable: true,
     hasShadow: false,
     webPreferences: {
       preload: preloadPath,
@@ -2609,12 +3165,24 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
   const variant = payload?.variant ?? '';
   const platforms = payload?.platforms; // Optional array of platforms to generate for
 
-  const pipelineDir = path.join(APP_ROOT, 'yt_pipeline');
-  const script = path.join(pipelineDir, 'run_pipeline.py');
+  const pipelineDir = getPipelineDir();
+  const script = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar.unpacked', 'yt_pipeline', 'run_pipeline.py')
+    : path.join(pipelineDir, 'run_pipeline.py');
 
   const outputsDir = getOutputsBaseDir();
   const reportsDir = getOutputsSubdir('Reports');
   const lastLogPath = path.join(reportsDir, 'last_run.log');
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+  const payloadAccessToken = typeof payload?.auth?.accessToken === 'string' ? payload.auth.accessToken : '';
+  const payloadFunctionsUrl = typeof payload?.auth?.functionsUrl === 'string' ? payload.auth.functionsUrl : '';
+  const effectiveAccessToken = payloadAccessToken || supabaseAccessToken;
+  const derivedFunctionsUrl = effectiveAccessToken ? deriveSupabaseFunctionsUrl(effectiveAccessToken) : '';
+  const supabaseFunctionsUrl = payloadFunctionsUrl
+    || supabaseFunctionsUrlOverride
+    || derivedFunctionsUrl
+    || process.env.SUPABASE_FUNCTIONS_URL
+    || (supabaseUrl ? `${supabaseUrl.replace(/\/+$/, '')}/functions/v1` : '');
 
   rotateRunLog(reportsDir, runId);
 
@@ -2632,6 +3200,34 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
     writeLine(formatTechLog(level, component, message, keys));
   };
 
+  const developerOpts = getDeveloperOptions();
+  let computeInfo = null;
+  try {
+    computeInfo = await getComputeBackend();
+  } catch {
+    computeInfo = null;
+  }
+  const availableGpu = Boolean(computeInfo && computeInfo.availableGpu);
+  const pref = developerOpts.computeBackendPreference || 'auto';
+  let effectiveDevice = 'cpu';
+  if (pref === 'force_cpu') {
+    effectiveDevice = 'cpu';
+  } else if (pref === 'prefer_gpu') {
+    effectiveDevice = availableGpu ? 'cuda' : 'cpu';
+  } else {
+    effectiveDevice = availableGpu ? 'cuda' : 'cpu';
+  }
+  const whisperComputeType =
+    effectiveDevice === 'cuda'
+      ? process.env.WHISPER_COMPUTE_TYPE || 'float16'
+      : process.env.WHISPER_COMPUTE_TYPE || 'int8';
+
+  log('INFO', 'pipeline', 'Compute backend resolved', {
+    preference: pref,
+    availableGpu,
+    effectiveDevice,
+  });
+
   const appVersion = app?.getVersion?.() || '0.0.0';
   log('INFO', 'pipeline', 'Run started', {
     runId,
@@ -2642,87 +3238,164 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
 
   if (!fs.existsSync(script)) {
     log('ERROR', 'pipeline', 'Step failed', { step: 'init', err: 'pipeline script not found', script });
+    if (app.isPackaged && mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Pipeline script missing',
+        message: 'run_pipeline.py was not found in the installation.',
+        detail: `Expected: ${script}. Reinstall ClipCast or restore app.asar.unpacked.`,
+      }).catch(() => {});
+    }
     return { runId, code: 2 };
   }
 
-  let python = process.env.PYTHON_PATH;
-  if (!python) {
-    const possiblePaths = [
-      path.join(process.env.USERPROFILE || '', 'miniconda3', 'envs', 'yt-gpu', 'python.exe'),
-      path.join(process.env.USERPROFILE || '', 'anaconda3', 'envs', 'yt-gpu', 'python.exe'),
-      path.join(process.env.CONDA_PREFIX || '', 'python.exe'),
-    ];
-    for (const pythonPath of possiblePaths) {
-      if (pythonPath && fs.existsSync(pythonPath)) {
-        python = pythonPath;
-        log('INFO', 'runner', 'Using Python from conda yt-gpu', { python: pythonPath });
-        break;
-      }
+  let python;
+  try {
+    python = getPipelinePythonPath();
+  } catch (e) {
+    log('ERROR', 'runner', 'Python resolution failed', { err: String(e) });
+    writePythonDiagnosticsLog({ step: 'resolve', error: String(e), resourcesPath: process.resourcesPath });
+    if (app.isPackaged && mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Python runtime not found',
+        message: 'ClipCast could not find its bundled Python runtime.',
+        detail: String(e),
+      }).catch(() => {});
     }
-    if (!python || python === process.env.PYTHON_PATH) {
-      python = 'python';
-      log('WARN', 'runner', 'Conda yt-gpu not found, using system Python', {});
-    }
-  } else {
-    log('INFO', 'runner', 'Using Python from PYTHON_PATH', { python });
+    return { runId, code: 2 };
   }
 
-  const baseArgs = mode === 'folder'
-    ? ['-u', script, '--folder', paths[0] || '', '--variant', variant]
-    : ['-u', script, '--files', ...paths, '--variant', variant];
-  const args = platforms && Array.isArray(platforms) && platforms.length > 0
-    ? [...baseArgs, '--platforms', ...platforms]
-    : baseArgs;
+  if (!python) {
+    log('ERROR', 'runner', 'No Python path (packaged build)');
+    return { runId, code: 2 };
+  }
 
-  log('INFO', 'runner', 'Spawning pipeline', { cmd: [python, ...args].join(' ') });
+  log('INFO', 'runner', 'Using Python for pipeline', { python });
+
+  const smokeResult = await runPythonSmokeTest(python);
+  if (!smokeResult.ok) {
+    const diag = {
+      step: 'smoke_test',
+      pythonExe: python,
+      error: smokeResult.error,
+      code: smokeResult.code,
+      stdout: smokeResult.stdout || '',
+      stderr: smokeResult.stderr || '',
+      resourcesPath: process.resourcesPath,
+      scriptExists: fileExists(script),
+      processArch: process.arch,
+      processVersions: process.versions,
+    };
+    writePythonDiagnosticsLog(diag);
+    log('ERROR', 'runner', 'Python smoke test failed', { error: smokeResult.error });
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: 'Python runtime could not start',
+        message: 'ClipCast could not start its bundled Python runtime. This is often caused by antivirus or Windows Defender blocking child processes. Please add ClipCast to exclusions or reinstall.',
+        detail: `Path: ${python}\nError: ${smokeResult.error}`,
+      }).catch(() => {});
+    }
+    return { runId, code: 1, error: smokeResult.error };
+  }
+
+  const { ffmpeg, ffprobe } = getBundledFfmpegPaths();
+
+  const scriptArgs = (mode === 'folder'
+    ? ['--folder', paths[0] || '', '--variant', variant]
+    : ['--files', ...paths, '--variant', variant])
+    .concat(
+      platforms && Array.isArray(platforms) && platforms.length > 0 ? ['--platforms', ...platforms] : [],
+      ['--device', effectiveDevice]
+    );
+
+  const pipelineEnv = {
+    KMP_DUPLICATE_LIB_OK: 'TRUE',
+    APP_USER_DATA: app.getPath('userData'),
+    ...(effectiveAccessToken ? { SUPABASE_ACCESS_TOKEN: effectiveAccessToken } : {}),
+    ...(supabaseFunctionsUrl ? { SUPABASE_FUNCTIONS_URL: supabaseFunctionsUrl } : {}),
+    ...(supabaseUrl ? { SUPABASE_URL: supabaseUrl } : {}),
+    OUTPUTS_DIR: outputsDir,
+    WHISPER_DEVICE: effectiveDevice,
+    WHISPER_COMPUTE_TYPE: whisperComputeType,
+    ...(ffmpeg ? { FFMPEG_PATH: ffmpeg } : {}),
+    ...(ffprobe ? { FFPROBE_PATH: ffprobe } : {}),
+  };
+
+  const workingDir = path.dirname(script);
+  log('INFO', 'runner', 'Spawning pipeline (no shell)', { python, script, cwd: workingDir });
 
   return await new Promise((resolve) => {
-    const child = spawn(python, args, {
-      cwd: APP_ROOT,
-      shell: false,
-      env: {
-        ...process.env,
-        KMP_DUPLICATE_LIB_OK: 'TRUE',
-        // Pass userData directory so Python can load openai_config.json
-        APP_USER_DATA: app.getPath('userData'),
-        // Configurable outputs base (Electron app setting)
-        OUTPUTS_DIR: outputsDir,
-        // Auto-detect GPU (RTX 3050+ uses CUDA, otherwise CPU)
-        ...(process.env.WHISPER_DEVICE ? { WHISPER_DEVICE: process.env.WHISPER_DEVICE } : {}),
-        ...(process.env.WHISPER_COMPUTE_TYPE ? { WHISPER_COMPUTE_TYPE: process.env.WHISPER_COMPUTE_TYPE } : {}),
-      },
-    });
-
-    child.stdout.on('data', (d) => {
-      const s = d.toString();
-      stdoutBuffer += s;
-      const lines = stdoutBuffer.split(/\r?\n/);
-      stdoutBuffer = lines.pop() ?? '';
-      for (const line of lines) {
-        const trimmed = line.replace(/\r/g, '').trim();
-        if (trimmed) {
-          writeLine(formatTechLog('INFO', 'pipeline', trimmed, {}));
+    const child = spawnPipelineProcess({
+      pythonExe: python,
+      runPipelinePy: script,
+      args: scriptArgs,
+      cwd: workingDir,
+      env: pipelineEnv,
+      onStdout(s) {
+        stdoutBuffer += s;
+        const lines = stdoutBuffer.split(/\r?\n/);
+        stdoutBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          const trimmed = line.replace(/\r/g, '').trim();
+          if (trimmed) {
+            writeLine(formatTechLog('INFO', 'pipeline', trimmed, {}));
+          }
+          emitFileDone(line);
         }
-        emitFileDone(line);
-      }
-    });
-    child.stderr.on('data', (d) => {
-      const s = d.toString();
-      const lines = s.split(/\r?\n/);
-      for (const line of lines) {
-        const trimmed = line.replace(/\r/g, '').trim();
-        if (trimmed) writeLine(formatTechLog('WARN', 'pipeline', trimmed, {}));
-      }
+      },
+      onStderr(s) {
+        const lines = s.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.replace(/\r/g, '').trim();
+          if (trimmed) writeLine(formatTechLog('WARN', 'pipeline', trimmed, {}));
+        }
+      },
     });
 
     child.on('error', (err) => {
       const code = (err && err.code) || '';
-      log('ERROR', 'pipeline', 'Step failed', { step: 'spawn', err: String(err), code: code || undefined });
+      const isEnoent = String(code) === 'ENOENT';
+      const isEperm = String(code) === 'EPERM';
+      const scriptExists = fileExists(script);
+      const enoentDiag = {
+        pythonExe: python,
+        cwd: workingDir,
+        scriptPath: script,
+        scriptExists,
+        processArch: process.arch,
+        processVersions: process.versions,
+        err: String(err),
+        code: code || undefined,
+      };
+      log('ERROR', 'pipeline', 'Step failed', {
+        step: 'spawn',
+        err: String(err),
+        code: code || undefined,
+      });
+      if (isEnoent || isEperm) {
+        writePythonDiagnosticsLog(enoentDiag);
+      }
       if (err && err.stack) {
         log('ERROR', 'pipeline', 'Stack', { trace: trimStack(err.stack) });
       }
-      if (String(code) === 'ENOENT') {
-        log('WARN', 'runner', 'Python not found; set PYTHON_PATH to full path', {});
+      if ((isEnoent || isEperm) && app.isPackaged) {
+        log('ERROR', 'runner', 'Failed to spawn pipeline process. This can be caused by security software blocking child processes from ClipCast.', {
+          python,
+          scriptExists,
+        });
+        log('ERROR', 'runner', 'If this persists, add ClipCast to AV/Defender exclusions or reinstall the app.', {});
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          dialog.showMessageBox(mainWindow, {
+            type: 'error',
+            title: 'Python runtime blocked',
+            message: 'ClipCast could not start its bundled Python runtime. This is often caused by antivirus or Windows Defender blocking child processes. Please add ClipCast to exclusions or reinstall.',
+            detail: `Path: ${python}\n\nCheck Windows Security → Protection history (Blocked), Controlled folder access, and ASR rules.`,
+          }).catch(() => {});
+        }
+      } else if (isEnoent) {
+        log('WARN', 'runner', 'Python not found; set PYTHON_PATH or developerOptions.pythonPath to full path', {});
       }
       resolve({ runId, code: 1, error: String(err) });
     });

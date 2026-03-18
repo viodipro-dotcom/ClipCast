@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { NetworkStatusProvider } from "./lib/networkStatus";
 import "./i18n";
 
 // Subscribe to auth callback (deep link) as early as possible so we never miss it
@@ -36,6 +37,8 @@ if (typeof window !== "undefined") {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <NetworkStatusProvider>
+      <App />
+    </NetworkStatusProvider>
   </React.StrictMode>
 );

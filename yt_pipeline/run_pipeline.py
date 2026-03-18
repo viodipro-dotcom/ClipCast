@@ -17,9 +17,10 @@ Key fix for your bug:
   If neither is provided, it can optionally fall back to VIDEOS_FOLDER env var.
 
 Notes:
-- Requires ffmpeg on PATH.
-- Requires pip install faster-whisper openai
-- OpenAI key must be set as OPENAI_API_KEY in environment.
+- Requires an ffmpeg binary. When launched from the ClipCast app, this is provided via the FFMPEG_PATH
+  environment variable pointing to the bundled ffmpeg.exe; otherwise it falls back to \"ffmpeg\" on PATH.
+- Requires pip install faster-whisper
+- AI metadata is fetched via Supabase Edge Function proxy (requires SUPABASE_ACCESS_TOKEN).
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ import sys
 import subprocess
 import time
 import unicodedata
+import urllib.error
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -76,16 +79,22 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # Default to gpt-4o-min
 
 # Faster-Whisper
 WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "medium")  # medium / large-v3 / etc
-# Auto-detect GPU: if RTX 3050 or better, use CUDA; otherwise use CPU
-# Can override with WHISPER_DEVICE=cuda or WHISPER_DEVICE=cpu
-WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", None)  # None = auto-detect, "cuda" or "cpu" to override
-WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", None)  # None = auto, "float16" (gpu) / "int8" (cpu)
+# Device: auto | cuda | cpu (default auto). Compute: auto | float16 | int8_float16 | int8 | float32 (default auto).
+# Auto device uses GPU if available; auto compute picks float16 on GPU, int8 on CPU (avoids float16-on-CPU error in EXE).
+_env_device = (os.getenv("WHISPER_DEVICE", "") or "").strip().lower()
+WHISPER_DEVICE = _env_device if _env_device in ("auto", "cuda", "cpu") else "auto"
+_env_compute = (os.getenv("WHISPER_COMPUTE_TYPE", "") or "").strip().lower()
+WHISPER_COMPUTE_TYPE = _env_compute if _env_compute in ("auto", "float16", "int8_float16", "int8", "float32") else "auto"
+CURRENT_WHISPER_DEVICE: Optional[str] = None
 
 # If you want to force OpenMP duplicate workaround automatically:
 KMP_DUPLICATE_LIB_OK = os.getenv("KMP_DUPLICATE_LIB_OK", "").strip().lower() in ("1", "true", "yes")
 
 # How short is "too short" for a transcript (to avoid generating metadata from filename)
 MIN_TRANSCRIPT_CHARS = int(os.getenv("MIN_TRANSCRIPT_CHARS", "40"))
+
+# ffmpeg binary location (can be overridden via env from Electron)
+FFMPEG_BIN = os.getenv("FFMPEG_PATH") or "ffmpeg"
 
 # ----------------------------
 # PATHS
@@ -288,7 +297,7 @@ def run_ffmpeg_extract_mp3(video_path: Path, mp3_path: Path) -> None:
         return
 
     cmd = [
-        "ffmpeg",
+        FFMPEG_BIN,
         "-y",
         "-i",
         str(video_path),
@@ -305,8 +314,35 @@ def run_ffmpeg_extract_mp3(video_path: Path, mp3_path: Path) -> None:
 
 
 # ----------------------------
-# WHISPER
+# WHISPER (device/compute_type and CPU fallback)
 # ----------------------------
+# Env: WHISPER_DEVICE=auto|cuda|cpu, WHISPER_COMPUTE_TYPE=auto|float16|int8_float16|int8|float32.
+# Auto device uses GPU if detected; auto compute uses float16 on GPU, int8 on CPU (avoids float16-on-CPU in EXE).
+# On GPU failure (load or mid-transcription), we fall back to CPU with int8, then float32 if int8 fails.
+
+def resolve_whisper_settings(
+    device_pref: str,
+    compute_pref: str,
+    cuda_available: bool,
+) -> tuple[str, str]:
+    """
+    Resolve (device, compute_type) from preferences and CUDA availability.
+    Use when device_pref is 'auto' | 'cuda' | 'cpu' and compute_pref is 'auto' | 'float16' | 'int8_float16' | 'int8' | 'float32'.
+    Caller should set cuda_available from detect_gpu_capability()[0] == 'cuda' when in auto mode.
+    """
+    if device_pref in ("cuda", "cpu"):
+        device = device_pref
+    else:
+        device = "cuda" if cuda_available else "cpu"
+    if compute_pref != "auto":
+        compute = compute_pref
+    else:
+        if device == "cuda":
+            compute = "float16"
+        else:
+            compute = "int8"
+    return (device, compute)
+
 
 def detect_gpu_capability():
     """
@@ -399,7 +435,7 @@ def detect_gpu_capability():
     return ("cuda", "float16")
 
 
-def load_whisper_model():
+def load_whisper_model(device_override: Optional[str] = None):
     # Import faster_whisper early to catch any import-time CUDA errors
     try:
         from faster_whisper import WhisperModel
@@ -413,30 +449,38 @@ def load_whisper_model():
             compute_type = "int8"
             try:
                 from faster_whisper import WhisperModel
-                print(
-                    f"🚀 Loading Whisper model on {device} ({WHISPER_MODEL_NAME}, {compute_type}) ..."
-                )
-                return WhisperModel(
+                print(f"🚀 Loading Whisper model on {device} ({WHISPER_MODEL_NAME}, {compute_type}) ...")
+                model = WhisperModel(
                     WHISPER_MODEL_NAME,
                     device=device,
                     compute_type=compute_type,
                 )
+                print(f"✅ Whisper loaded on {device} with compute_type={compute_type}")
+                return model
             except Exception as e:
                 print(f"❌ Failed to load Whisper model: {e}")
                 raise
         else:
             raise
 
-    # Auto-detect GPU if not explicitly set
-    if WHISPER_DEVICE is None:
-        device, compute_type = detect_gpu_capability()
-        if device == "cuda":
-            print(f"✅ Detected NVIDIA GPU (RTX 3050+), using CUDA mode")
+    global CURRENT_WHISPER_DEVICE
+
+    # Determine desired device / compute_type via resolve_whisper_settings.
+    # Precedence: explicit override (CLI) > env vars (WHISPER_DEVICE, WHISPER_COMPUTE_TYPE) > auto-detect.
+    device_pref = (device_override or WHISPER_DEVICE).strip().lower() if (device_override or WHISPER_DEVICE) else "auto"
+    compute_pref = WHISPER_COMPUTE_TYPE
+    if device_pref == "auto":
+        auto_device, _ = detect_gpu_capability()
+        cuda_available = auto_device == "cuda"
+        if cuda_available:
+            print("✅ Detected NVIDIA GPU (RTX 3050+), using CUDA mode")
         else:
-            print(f"ℹ️  No suitable GPU detected, using CPU mode")
+            print("ℹ️  No suitable GPU detected, using CPU mode")
     else:
-        device = WHISPER_DEVICE
-        compute_type = WHISPER_COMPUTE_TYPE or ("float16" if device == "cuda" else "int8")
+        cuda_available = device_pref == "cuda"
+    device, compute_type = resolve_whisper_settings(device_pref, compute_pref, cuda_available)
+    CURRENT_WHISPER_DEVICE = device
+    print(f"Whisper: device={device}, compute_type={compute_type} (from WHISPER_DEVICE={WHISPER_DEVICE!r}, WHISPER_COMPUTE_TYPE={WHISPER_COMPUTE_TYPE!r})")
     
     # If device is set to CUDA, try to use it directly
     # faster-whisper will handle CUDA errors gracefully and we'll catch them below
@@ -463,20 +507,24 @@ def load_whisper_model():
             return model
         except (RuntimeError, OSError, ImportError, Exception) as e:
             error_msg = str(e).lower()
-            # Check if it's a CUDA/cuDNN related error
-            if "cuda" in error_msg or "cudnn" in error_msg or "dll" in error_msg:
-                print(f"⚠️  CUDA/cuDNN error detected: {e}")
-                print("🔄 Falling back to CPU mode...")
+            # CUDA/cuDNN error or float16 not supported on device (e.g. fallback to CPU with wrong compute_type)
+            is_cuda_or_float16_error = (
+                "cuda" in error_msg or "cudnn" in error_msg or "dll" in error_msg
+                or ("float16" in error_msg and ("do not support" in error_msg or "target device" in error_msg or "backend" in error_msg))
+            )
+            if is_cuda_or_float16_error:
+                print(f"⚠️  GPU/compute error detected: {e}")
+                print("🔄 GPU failed, retrying on CPU with compute_type=int8")
                 device = "cpu"
                 compute_type = "int8"
+                CURRENT_WHISPER_DEVICE = device
             else:
-                # Re-raise if it's not a CUDA issue
                 raise
     else:
         print(
             f"🚀 Loading Whisper model on {device} ({WHISPER_MODEL_NAME}, {compute_type}) ..."
         )
-    
+
     # Load on CPU (either because device was CPU, or because CUDA failed)
     try:
         model = WhisperModel(
@@ -484,12 +532,26 @@ def load_whisper_model():
             device=device,
             compute_type=compute_type,
         )
-        if device == "cpu" and WHISPER_DEVICE is None:
-            print("✅ Successfully loaded model on CPU (CUDA fallback)")
+        print(f"✅ Whisper loaded on {device} with compute_type={compute_type}")
         return model
     except Exception as cpu_error:
-        print(f"❌ Failed to load Whisper model on {device}: {cpu_error}")
-        raise
+        if device != "cpu" or compute_type == "float32":
+            print(f"❌ Failed to load Whisper model on {device}: {cpu_error}")
+            raise
+        print(f"⚠️  CPU {compute_type} compute_type failed: {cpu_error}")
+        print("🔄 CPU int8 compute_type failed, retrying with float32")
+        compute_type = "float32"
+        try:
+            model = WhisperModel(
+                WHISPER_MODEL_NAME,
+                device=device,
+                compute_type=compute_type,
+            )
+            print(f"✅ Whisper loaded on {device} with compute_type={compute_type}")
+            return model
+        except Exception as e2:
+            print(f"❌ Failed to load Whisper model on {device} (float32): {e2}")
+            raise
 
 
 def transcribe_to_text(model, mp3_path: Path) -> str:
@@ -504,6 +566,23 @@ def transcribe_to_text(model, mp3_path: Path) -> str:
         if txt:
             parts.append(txt)
     return " ".join(parts).strip()
+
+
+def _is_gpu_error(exc: BaseException) -> bool:
+    """True if the exception indicates GPU/compute failure (e.g. float16 on CPU mid-run)."""
+    msg = str(exc).lower()
+    patterns = [
+        "cuda out of memory",
+        "cuda error",
+        "cublas",
+        "cudnn",
+        "no kernel image",
+        "dll load failed",
+        "could not locate cudnn",
+        "cudart",
+        "float16",
+    ]
+    return any(p in msg for p in patterns)
 
 
 # ----------------------------
@@ -1092,11 +1171,11 @@ def has_sources_hint(instructions_text: str) -> bool:
     return any(token in normalized for token in hints) or any(token in original_lower for token in hints_unicode)
 
 
-def classify_sources_intent(client, instructions_text: str) -> str:
+def classify_sources_intent(instructions_text: str) -> str:
     if not instructions_text:
         return "none"
     try:
-        response = client.chat.completions.create(
+        label = call_openai_proxy(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -1111,8 +1190,7 @@ def classify_sources_intent(client, instructions_text: str) -> str:
                 {"role": "user", "content": f"Instruction:\n{instructions_text}"},
             ],
             temperature=0,
-        )
-        label = (response.choices[0].message.content or "").strip().lower()
+        ).strip().lower()
         if "external_links" in label:
             return "external_links"
         if "transcript_only" in label:
@@ -1150,6 +1228,66 @@ def strip_unapproved_urls(text: str, allowed_urls: List[str]) -> str:
     cleaned = re.sub(r"(https?://[^\s\)\]\}<>\"']+|www\.[^\s\)\]\}<>\"']+)", _replace, text, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s{2,}", " ", cleaned).strip()
     return cleaned
+
+
+def _resolve_supabase_functions_url() -> str:
+    url = os.getenv("SUPABASE_FUNCTIONS_URL", "").strip()
+    if url:
+        return url.rstrip("/")
+    base = os.getenv("SUPABASE_URL", "").strip()
+    if not base:
+        return ""
+    return base.rstrip("/") + "/functions/v1"
+
+
+
+def call_openai_proxy(
+    messages: List[Dict[str, str]],
+    model: str,
+    response_format: Optional[Dict[str, Any]] = None,
+    temperature: float = 0.7,
+) -> str:
+    token = os.getenv("SUPABASE_ACCESS_TOKEN", "").strip()
+    functions_url = _resolve_supabase_functions_url()
+    if not token:
+        raise ValueError("Missing Supabase access token. Please sign in and try again.")
+    if not functions_url:
+        raise ValueError("Missing SUPABASE_FUNCTIONS_URL. Please configure the app and try again.")
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if response_format:
+        payload["response_format"] = response_format
+
+    req = urllib.request.Request(
+        f"{functions_url}/generate-metadata",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8") if hasattr(e, "read") else ""
+        try:
+            data = json.loads(raw) if raw else {}
+        except Exception:
+            data = {}
+        msg = data.get("error") or raw or str(e)
+        raise ValueError(f"OpenAI proxy error: {msg}")
+
+    if not isinstance(data, dict) or not data.get("ok"):
+        raise ValueError(data.get("error") or "OpenAI proxy error")
+
+    return str(data.get("content") or "")
 
 
 def extract_search_keywords(transcript: str, min_count: int = 5, max_count: int = 10) -> List[str]:
@@ -1297,10 +1435,10 @@ def has_structured_formatting_heuristic(instructions_text: str) -> bool:
     return False
 
 
-def classify_structured_intent(client, instructions_text: str) -> str:
+def classify_structured_intent(instructions_text: str) -> str:
     instructions_text = instructions_text or ""
     try:
-        response = client.chat.completions.create(
+        label = call_openai_proxy(
             model="gpt-4o-mini",
             messages=[
                 {
@@ -1310,8 +1448,7 @@ def classify_structured_intent(client, instructions_text: str) -> str:
                 {"role": "user", "content": instructions_text},
             ],
             temperature=0,
-        )
-        label = (response.choices[0].message.content or "").strip().lower()
+        ).strip().lower()
         if "structured" in label:
             return "structured"
         if "default" in label:
@@ -1750,14 +1887,6 @@ def openai_generate_metadata(
         print(f"[customAI] Error | code={_code} msg={_msg}")
         print(f"[customAI] Done           | ms={int((time.perf_counter() - _t0) * 1000)} ok=false")
 
-    try:
-        from openai import OpenAI
-    except ImportError as e:
-        _log_customai_error(e)
-        raise
-
-    openai_client = None
-
     include_speaker_name_effective = include_speaker_name
     if speaker_name_override:
         include_speaker_name_effective = True
@@ -1813,33 +1942,6 @@ def openai_generate_metadata(
         platform: extract_allowed_urls(resolved_by_platform[platform]["mergedInstructions"])
         for platform in platforms_for_prompt
     }
-
-    def get_openai_client():
-        nonlocal openai_client
-        if openai_client is not None:
-            return openai_client
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            user_data_dir_local = os.getenv("APP_USER_DATA")
-            if user_data_dir_local:
-                config_path = os.path.join(user_data_dir_local, "openai_config.json")
-                if os.path.exists(config_path):
-                    try:
-                        with open(config_path, "r", encoding="utf-8") as f:
-                            config = json.load(f)
-                            api_key = config.get("apiKey") or config.get("api_key") or config.get("OPENAI_API_KEY")
-                            if api_key:
-                                print(f"✅ Loaded OpenAI API key from {config_path}")
-                    except Exception as e:
-                        print(f"⚠️  Failed to read {config_path}: {e}")
-        if not api_key:
-            raise ValueError(
-                "OpenAI API key not found. Please set it in one of these ways:\n"
-                "1. Create userData/openai_config.json with: { \"apiKey\": \"sk-...\" }\n"
-                "2. Set OPENAI_API_KEY environment variable"
-            )
-        openai_client = OpenAI(api_key=api_key)
-        return openai_client
 
     wants_structured_description_by_platform: Dict[str, bool] = {}
     for platform in platforms_for_prompt:
@@ -2130,22 +2232,19 @@ def openai_generate_metadata(
     
     prompt = "\n".join(prompt_parts).strip()
 
-    client = get_openai_client()
-
     try:
-        response = client.chat.completions.create(
+        text = call_openai_proxy(
             model=OPENAI_MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that generates social media metadata. Always return valid JSON only, no markdown formatting. Follow user instructions EXACTLY, especially those marked as HIGHEST PRIORITY."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"} if "gpt-4" in OPENAI_MODEL or "gpt-3.5" in OPENAI_MODEL else None,
             temperature=0.7,
-        )
-        text = (response.choices[0].message.content or "").strip()
+        ).strip()
     except Exception as e:
         _log_customai_error(e)
-        raise ValueError(f"OpenAI API error: {str(e)}")
+        raise ValueError(f"OpenAI proxy error: {str(e)}")
 
     data = extract_json_from_text(text)
     if not isinstance(data, dict):
@@ -2201,7 +2300,7 @@ def openai_generate_metadata(
         print(f"[customAI] retrying description expansion | targets={','.join(retry_targets.keys())}")
         retry_prompt = build_expansion_prompt(platforms, retry_targets)
         try:
-            retry_response = client.chat.completions.create(
+            retry_text = call_openai_proxy(
                 model=OPENAI_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant that edits JSON metadata. Always return valid JSON only, no markdown formatting."},
@@ -2209,8 +2308,7 @@ def openai_generate_metadata(
                 ],
                 response_format={"type": "json_object"} if "gpt-4" in OPENAI_MODEL or "gpt-3.5" in OPENAI_MODEL else None,
                 temperature=0.6,
-            )
-            retry_text = (retry_response.choices[0].message.content or "").strip()
+            ).strip()
             retry_data = extract_json_from_text(retry_text)
             retry_platforms = retry_data.get("platforms") if isinstance(retry_data, dict) else None
             if isinstance(retry_platforms, dict):
@@ -2381,6 +2479,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--times", default=None, help="(ignored) UI scheduling")
     p.add_argument("--publish_mode", default=None, help="(ignored) UI scheduling")
     p.add_argument("--no-openai", action="store_true", help="Skip OpenAI metadata generation")
+    p.add_argument("--device", choices=["cuda", "cpu"], default=None, help="Force compute device for Whisper (cuda|cpu)")
     p.add_argument("--platforms", nargs="*", default=None, help="Generate metadata only for specified platforms (youtube, instagram, tiktok)")
 
     args, unknown = p.parse_known_args()
@@ -2436,6 +2535,16 @@ def main() -> int:
     args = parse_args()
     ensure_dirs()
 
+    # Quick ffmpeg presence check for clearer diagnostics if the bundled binary is missing.
+    try:
+        subprocess.run([FFMPEG_BIN, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+    except FileNotFoundError:
+        print("❌ ffmpeg was not found. If you are running ClipCast, the installation may be corrupted (missing internal ffmpeg binary).")
+        return 3
+    except Exception:
+        # Non-fatal: the actual extract step will surface detailed errors if ffmpeg is broken.
+        pass
+
     # Parse allowed platforms
     allowed_platforms = None
     if args.platforms:
@@ -2470,7 +2579,7 @@ def main() -> int:
     csv_rows: List[List[str]] = []
     csv_rows.append(["video", "action", "variant_type", "include_speaker_name", "metadata_file", "error"])
 
-    model = load_whisper_model()
+    model = load_whisper_model(args.device)
 
     for v in videos:
         stem = stem_for_path(v)
@@ -2490,7 +2599,15 @@ def main() -> int:
 
             # 2) Transcript
             if not transcript_path.exists() or transcript_path.stat().st_size < 10:
-                text = transcribe_to_text(model, mp3_path)
+                try:
+                    text = transcribe_to_text(model, mp3_path)
+                except Exception as exc:
+                    if CURRENT_WHISPER_DEVICE == "cuda" and _is_gpu_error(exc):
+                        print("[compute] GPU failed for Whisper, reloading on CPU (int8) and retrying")
+                        model = load_whisper_model("cpu")
+                        text = transcribe_to_text(model, mp3_path)
+                    else:
+                        raise
                 write_text(transcript_path, text)
             else:
                 text = read_text(transcript_path)
@@ -2560,12 +2677,88 @@ def main() -> int:
                     except Exception as e:
                         print(f"⚠️  Failed to normalize hashtags in metadata: {e}")
                 else:
-                    # Check if openai is available
                     try:
-                        import openai
-                    except ImportError:
-                        print("⚠️  OpenAI module not installed. Skipping OpenAI metadata generation.")
-                        print("   Install it with: pip install openai>=1.0.0")
+                        user_data_dir_local = os.getenv("APP_USER_DATA")
+                        settings = load_metadata_settings(user_data_dir_local) if user_data_dir_local else {
+                            "customInstructions": create_empty_platform_map(),
+                            "descriptionTemplate": create_empty_platform_map(),
+                            "blocks": normalize_blocks({}),
+                        }
+                        platforms_to_generate = allowed_platforms if allowed_platforms else ["youtube", "instagram", "tiktok"]
+                        split_generation = should_split_generation(settings, platforms_to_generate)
+                        instruction_map = build_platform_instruction_map(settings, platforms_to_generate)
+                        combined_instructions = "\n".join(instruction_map.values())
+                        speaker_name_override = extract_speaker_name_from_instructions(combined_instructions)
+                        if speaker_name_override:
+                            include_name = True
+                        force_same_description = wants_identical_description(combined_instructions)
+
+                        if split_generation:
+                            print("[customAI] per-platform overrides | generating separately")
+                            per_platform: Dict[str, Any] = {}
+                            model_used = None
+                            for platform_key in platforms_to_generate:
+                                meta_platform = openai_generate_metadata(
+                                    transcript=text,
+                                    filename_hint=v.name,
+                                    include_speaker_name=include_name,
+                                    speaker_name_override=speaker_name_override,
+                                    variant_type=variant_type,
+                                    allowed_platforms=[platform_key],
+                                )
+                                platform_data = meta_platform.get("platforms", {}).get(platform_key)
+                                if isinstance(platform_data, dict):
+                                    per_platform[platform_key] = platform_data
+                                if not model_used:
+                                    model_used = meta_platform.get("model")
+                            if force_same_description and len(per_platform) > 1:
+                                apply_identical_description(per_platform, platforms_to_generate)
+                            meta = {
+                                "platforms": per_platform,
+                                "model": model_used or OPENAI_MODEL,
+                                "speaker_name_override": speaker_name_override,
+                            }
+                        else:
+                            meta = openai_generate_metadata(
+                                transcript=text,
+                                filename_hint=v.name,
+                                include_speaker_name=include_name,
+                                speaker_name_override=speaker_name_override,
+                                variant_type=variant_type,
+                                allowed_platforms=allowed_platforms,
+                            )
+                            if force_same_description and len(platforms_to_generate) > 1:
+                                apply_identical_description(meta.get("platforms", {}), platforms_to_generate)
+
+                        # Merge with existing metadata if regenerating specific platforms
+                        if existing_meta and allowed_platforms:
+                            # Start with existing platforms
+                            merged_platforms = existing_meta.get("platforms", {}).copy()
+                            # Update/add only the requested platforms
+                            for platform, platform_data in meta["platforms"].items():
+                                merged_platforms[platform] = platform_data
+                            final_platforms = merged_platforms
+                        else:
+                            # Use all generated platforms (no existing metadata or regenerating all)
+                            final_platforms = meta["platforms"]
+
+                        final = {
+                            "source_video": str(v),
+                            "variant_type": variant_type,
+                            "include_speaker_name": bool(include_name),
+                            "speaker_name_controlled": SPEAKER_NAME,
+                            "speaker_name_override": meta.get("speaker_name_override"),
+                            "generated_at": datetime.now().isoformat(timespec="seconds"),
+                            "platforms": final_platforms,
+                            "openai_model": meta.get("model", OPENAI_MODEL),
+                            "transcript_chars": len(text),
+                        }
+                        final = normalize_metadata_hashtags(final)
+                        save_json(meta_path, final)
+                        action = "OK"
+                        print("✅ Metadata saved")
+                    except Exception as e:
+                        print(f"❌ OpenAI error: {e}")
                         final = {
                             "source_video": str(v),
                             "variant_type": variant_type,
@@ -2573,102 +2766,9 @@ def main() -> int:
                             "generated_at": datetime.now().isoformat(timespec="seconds"),
                             "platforms": {},
                             "openai_model": OPENAI_MODEL,
-                            "note": "OpenAI skipped: module not installed",
+                            "note": f"OpenAI error: {str(e)}",
                         }
-                        action = "SKIP_OPENAI"
-                    else:
-                        try:
-                            user_data_dir_local = os.getenv("APP_USER_DATA")
-                            settings = load_metadata_settings(user_data_dir_local) if user_data_dir_local else {
-                                "customInstructions": create_empty_platform_map(),
-                                "descriptionTemplate": create_empty_platform_map(),
-                                "blocks": normalize_blocks({}),
-                            }
-                            platforms_to_generate = allowed_platforms if allowed_platforms else ["youtube", "instagram", "tiktok"]
-                            split_generation = should_split_generation(settings, platforms_to_generate)
-                            instruction_map = build_platform_instruction_map(settings, platforms_to_generate)
-                            combined_instructions = "\n".join(instruction_map.values())
-                            speaker_name_override = extract_speaker_name_from_instructions(combined_instructions)
-                            if speaker_name_override:
-                                include_name = True
-                            force_same_description = wants_identical_description(combined_instructions)
-
-                            if split_generation:
-                                print("[customAI] per-platform overrides | generating separately")
-                                per_platform: Dict[str, Any] = {}
-                                model_used = None
-                                for platform_key in platforms_to_generate:
-                                    meta_platform = openai_generate_metadata(
-                                        transcript=text,
-                                        filename_hint=v.name,
-                                        include_speaker_name=include_name,
-                                        speaker_name_override=speaker_name_override,
-                                        variant_type=variant_type,
-                                        allowed_platforms=[platform_key],
-                                    )
-                                    platform_data = meta_platform.get("platforms", {}).get(platform_key)
-                                    if isinstance(platform_data, dict):
-                                        per_platform[platform_key] = platform_data
-                                    if not model_used:
-                                        model_used = meta_platform.get("model")
-                                if force_same_description and len(per_platform) > 1:
-                                    apply_identical_description(per_platform, platforms_to_generate)
-                                meta = {
-                                    "platforms": per_platform,
-                                    "model": model_used or OPENAI_MODEL,
-                                    "speaker_name_override": speaker_name_override,
-                                }
-                            else:
-                                meta = openai_generate_metadata(
-                                    transcript=text,
-                                    filename_hint=v.name,
-                                    include_speaker_name=include_name,
-                                    speaker_name_override=speaker_name_override,
-                                    variant_type=variant_type,
-                                    allowed_platforms=allowed_platforms,
-                                )
-                                if force_same_description and len(platforms_to_generate) > 1:
-                                    apply_identical_description(meta.get("platforms", {}), platforms_to_generate)
-
-                            # Merge with existing metadata if regenerating specific platforms
-                            if existing_meta and allowed_platforms:
-                                # Start with existing platforms
-                                merged_platforms = existing_meta.get("platforms", {}).copy()
-                                # Update/add only the requested platforms
-                                for platform, platform_data in meta["platforms"].items():
-                                    merged_platforms[platform] = platform_data
-                                final_platforms = merged_platforms
-                            else:
-                                # Use all generated platforms (no existing metadata or regenerating all)
-                                final_platforms = meta["platforms"]
-
-                            final = {
-                                "source_video": str(v),
-                                "variant_type": variant_type,
-                                "include_speaker_name": bool(include_name),
-                                "speaker_name_controlled": SPEAKER_NAME,
-                                "speaker_name_override": meta.get("speaker_name_override"),
-                                "generated_at": datetime.now().isoformat(timespec="seconds"),
-                                "platforms": final_platforms,
-                                "openai_model": meta.get("model", OPENAI_MODEL),
-                                "transcript_chars": len(text),
-                            }
-                            final = normalize_metadata_hashtags(final)
-                            save_json(meta_path, final)
-                            action = "OK"
-                            print("✅ Metadata saved")
-                        except Exception as e:
-                            print(f"❌ OpenAI error: {e}")
-                            final = {
-                                "source_video": str(v),
-                                "variant_type": variant_type,
-                                "include_speaker_name": bool(include_name),
-                                "generated_at": datetime.now().isoformat(timespec="seconds"),
-                                "platforms": {},
-                                "openai_model": OPENAI_MODEL,
-                                "note": f"OpenAI error: {str(e)}",
-                            }
-                            action = "ERROR"
+                        action = "ERROR"
 
             # 4) Exports
             export_platforms(final_meta=final, exports_dir=EXPORTS_DIR, stem=stem, allowed_platforms=allowed_platforms)

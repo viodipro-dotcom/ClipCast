@@ -73,15 +73,31 @@ contextBridge.exposeInMainWorld('api', {
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (payload) => ipcRenderer.invoke('settings:set', payload),
 
+  // secrets (keytar-backed)
+  secretsGetYouTubeTokens: () => ipcRenderer.invoke('secrets:getYouTubeTokens'),
+  secretsSetYouTubeTokens: (tokens) => ipcRenderer.invoke('secrets:setYouTubeTokens', tokens),
+  secretsClearYouTubeTokens: () => ipcRenderer.invoke('secrets:clearYouTubeTokens'),
+  secretsGetGoogleOAuthClient: () => ipcRenderer.invoke('secrets:getGoogleOAuthClient'),
+  secretsSetGoogleOAuthClient: (clientId, clientSecret) =>
+    ipcRenderer.invoke('secrets:setGoogleOAuthClient', clientId, clientSecret),
+  secretsClearGoogleOAuthClient: () => ipcRenderer.invoke('secrets:clearGoogleOAuthClient'),
+
+  // auth
+  authSetSupabaseAccessToken: (token, functionsUrl) =>
+    ipcRenderer.invoke('auth:setSupabaseAccessToken', token, functionsUrl),
+
   // outputs folder (Developer Mode)
   getOutputsDir: () => ipcRenderer.invoke('settings:getOutputsDir'),
   getDefaultOutputsDir: () => ipcRenderer.invoke('settings:getDefaultOutputsDir'),
   pickOutputsDir: () => ipcRenderer.invoke('settings:pickOutputsDir'),
+  pickPythonPath: () => ipcRenderer.invoke('settings:pickPythonPath'),
   setOutputsDir: (path) => ipcRenderer.invoke('settings:setOutputsDir', path),
   resetOutputsDir: () => ipcRenderer.invoke('settings:resetOutputsDir'),
   moveOutputsToNewDir: (payload) => ipcRenderer.invoke('settings:moveOutputsToNewDir', payload),
   getDeveloperOptions: () => ipcRenderer.invoke('settings:getDeveloperOptions'),
   setDeveloperOptions: (payload) => ipcRenderer.invoke('settings:setDeveloperOptions', payload),
+  getComputeBackend: () => ipcRenderer.invoke('settings:getComputeBackend'),
+  refreshComputeBackend: () => ipcRenderer.invoke('settings:refreshComputeBackend'),
   retentionRun: () => ipcRenderer.invoke('retention:run'),
 
   // custom ai presets
@@ -134,6 +150,18 @@ contextBridge.exposeInMainWorld('api', {
     const handler = (_event, url) => cb(url);
     ipcRenderer.on('auth:deep-link', handler);
     return () => ipcRenderer.removeListener('auth:deep-link', handler);
+  },
+
+  // app update (electron-updater)
+  updateCheck: () => ipcRenderer.invoke('update:check'),
+  updateDownload: () => ipcRenderer.invoke('update:download'),
+  updateInstall: () => ipcRenderer.invoke('update:install'),
+  updateGetStatus: () => ipcRenderer.invoke('update:getStatus'),
+  updateDismiss: () => ipcRenderer.invoke('update:dismiss'),
+  onUpdateStatus: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('update:status', handler);
+    return () => ipcRenderer.removeListener('update:status', handler);
   },
 });
 

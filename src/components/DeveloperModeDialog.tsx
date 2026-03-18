@@ -14,6 +14,8 @@ import {
   Alert,
   TextField,
   Checkbox,
+  Radio,
+  RadioGroup,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 
@@ -42,12 +44,33 @@ export default function DeveloperModeDialog({
   const [autoDeleteArchived, setAutoDeleteArchived] = React.useState(false);
   const [deleteArchivedAfterDays, setDeleteArchivedAfterDays] = React.useState(30);
   const [outputsPath, setOutputsPath] = React.useState('');
+  const [pythonPath, setPythonPath] = React.useState('');
   const [moveConfirmOpen, setMoveConfirmOpen] = React.useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = React.useState(false);
   const [pendingNewPath, setPendingNewPath] = React.useState<string | null>(null);
   const [pendingOldPath, setPendingOldPath] = React.useState<string | null>(null);
   const [deleteAfterCopy, setDeleteAfterCopy] = React.useState(false);
   const [resetDeleteAfterCopy, setResetDeleteAfterCopy] = React.useState(false);
+  const [computeBackendInfo, setComputeBackendInfo] = React.useState<{
+    availableGpu: boolean;
+    details: {
+      python?: string;
+      platform?: string;
+      torch_installed?: boolean;
+      torch_version?: string | null;
+      cuda_available?: boolean;
+      cuda_version?: string | null;
+      gpu_count?: number;
+      gpu_name?: string | null;
+      vram_total_mb?: number;
+      error?: string | null;
+    };
+    error?: string | null;
+    pythonPath?: string;
+  } | null>(null);
+  const [computeBackendPreference, setComputeBackendPreference] = React.useState<'auto' | 'prefer_gpu' | 'force_cpu'>('auto');
+  const [computeBackendLoading, setComputeBackendLoading] = React.useState(false);
+  const [updateCheckMessage, setUpdateCheckMessage] = React.useState<string | null>(null);
 
   const loadOutputsPath = React.useCallback(async () => {
     try {
@@ -72,9 +95,31 @@ export default function DeveloperModeDialog({
         setArchiveAfterDays(Math.min(365, Math.max(1, Number(opts.archiveAfterDays) || 7)));
         setAutoDeleteArchived(Boolean(opts.autoDeleteArchived));
         setDeleteArchivedAfterDays(Math.min(365, Math.max(1, Number(opts.deleteArchivedAfterDays) || 30)));
+        if (opts.computeBackendPreference === 'prefer_gpu' || opts.computeBackendPreference === 'force_cpu') {
+          setComputeBackendPreference(opts.computeBackendPreference);
+        } else {
+          setComputeBackendPreference('auto');
+        }
+        if (typeof opts.pythonPath === 'string') {
+          setPythonPath(opts.pythonPath);
+        }
       }
     } catch {
       // ignore
+    }
+  }, []);
+
+  const loadComputeBackend = React.useCallback(async () => {
+    try {
+      setComputeBackendLoading(true);
+      const info = await window.api?.getComputeBackend?.();
+      if (info) {
+        setComputeBackendInfo(info);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setComputeBackendLoading(false);
     }
   }, []);
 
@@ -84,6 +129,52 @@ export default function DeveloperModeDialog({
       loadDeveloperOptions();
     }
   }, [open, loadOutputsPath, loadDeveloperOptions]);
+
+  const handleComputeBackendPreferenceChange = (value: 'auto' | 'prefer_gpu' | 'force_cpu') => {
+    setComputeBackendPreference(value);
+    window.api?.setDeveloperOptions?.({ computeBackendPreference: value });
+  };
+
+  const handleComputeBackendRefresh = async () => {
+    try {
+      setComputeBackendLoading(true);
+      const info = await window.api?.refreshComputeBackend?.();
+      if (info) {
+        setComputeBackendInfo(info);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setComputeBackendLoading(false);
+    }
+  };
+
+  const savePythonPath = async (value: string) => {
+    const trimmed = value.trim();
+    setPythonPath(trimmed);
+    try {
+      await window.api?.setDeveloperOptions?.({ pythonPath: trimmed });
+      if (trimmed) {
+        onSnack?.(t('pythonPathSaved'));
+      } else {
+        onSnack?.(t('pythonPathCleared'));
+      }
+      handleComputeBackendRefresh();
+    } catch {
+      onSnack?.(t('pythonPathSaveError'));
+    }
+  };
+
+  const handlePythonBrowse = async () => {
+    try {
+      const res = await window.api?.pickPythonPath?.();
+      if (res?.ok && res.path) {
+        await savePythonPath(res.path);
+      }
+    } catch {
+      onSnack?.(t('pythonPathSaveError'));
+    }
+  };
 
   const handleDebugModeChange = (enabled: boolean) => {
     setDebugMode(enabled);
@@ -228,6 +319,33 @@ export default function DeveloperModeDialog({
       onSnack?.(`${t('outputsFolderError')}: ${String(e)}`);
     }
   };
+
+  const gpuAvailable =
+    Boolean(computeBackendInfo?.availableGpu) &&
+    Boolean(computeBackendInfo?.details?.cuda_available) &&
+    (computeBackendInfo?.details?.gpu_count ?? 0) > 0;
+
+  const effectiveBackend: 'gpu' | 'cpu' = (() => {
+    if (computeBackendPreference === 'force_cpu') return 'cpu';
+    if (computeBackendPreference === 'prefer_gpu') return gpuAvailable ? 'gpu' : 'cpu';
+    return gpuAvailable ? 'gpu' : 'cpu';
+  })();
+
+  const computeStatusLine = (() => {
+    if (!computeBackendInfo) {
+      return t('computeBackendStatusUnknown');
+    }
+    const label = computeBackendInfo.availableGpu ? 'GPU' : 'CPU';
+    const name = computeBackendInfo.details?.gpu_name || '';
+    if (computeBackendInfo.availableGpu && name) {
+      return t('computeBackendStatusWithName', { label, name });
+    }
+    return t('computeBackendStatus', { label });
+  })();
+
+  const computeWillUseLine = !computeBackendInfo
+    ? t('computeBackendWillUseUnknown')
+    : t('computeBackendWillUse', { label: effectiveBackend === 'gpu' ? 'GPU' : 'CPU' });
 
   return (
     <>
@@ -393,6 +511,101 @@ export default function DeveloperModeDialog({
 
             <Divider />
 
+            {/* Compute backend */}
+            <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
+                {t('computeBackend')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                {t('computeBackendHelper')}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5 }}>
+                {computeStatusLine}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                {computeWillUseLine}
+              </Typography>
+              <RadioGroup
+                row
+                value={computeBackendPreference}
+                onChange={(e) =>
+                  handleComputeBackendPreferenceChange(e.target.value as 'auto' | 'prefer_gpu' | 'force_cpu')
+                }
+              >
+                <FormControlLabel
+                  value="auto"
+                  control={<Radio size="small" />}
+                  label={t('computeBackendAuto')}
+                />
+                <FormControlLabel
+                  value="prefer_gpu"
+                  control={<Radio size="small" />}
+                  label={t('computeBackendPreferGpu')}
+                  disabled={!gpuAvailable}
+                />
+                <FormControlLabel
+                  value="force_cpu"
+                  control={<Radio size="small" />}
+                  label={t('computeBackendForceCpu')}
+                />
+              </RadioGroup>
+              <Box sx={{ mt: 1, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleComputeBackendRefresh}
+                  disabled={computeBackendLoading}
+                >
+                  {t('computeBackendRefresh')}
+                </Button>
+                {computeBackendInfo?.pythonPath && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t('computeBackendPython', { path: computeBackendInfo.pythonPath })}
+                  </Typography>
+                )}
+                {computeBackendInfo && !gpuAvailable && (
+                  <Typography variant="caption" color="text.secondary">
+                    {t('computeBackendGpuUnavailable')}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ mt: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  {t('pythonPathHelper')}
+                </Typography>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label={t('pythonPathLabel')}
+                  value={pythonPath}
+                  onChange={(e) => setPythonPath(e.target.value)}
+                  onBlur={(e) => savePythonPath(e.target.value)}
+                  margin="dense"
+                />
+                <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                  <Button size="small" variant="outlined" onClick={handlePythonBrowse}>
+                    {t('pythonPathBrowse')}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="secondary"
+                    onClick={() => savePythonPath('')}
+                    disabled={!pythonPath}
+                  >
+                    {t('pythonPathClear')}
+                  </Button>
+                </Stack>
+              </Box>
+              {computeBackendInfo?.error && (
+                <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.5 }}>
+                  {computeBackendInfo.error}
+                </Typography>
+              )}
+            </Box>
+
+            <Divider />
+
             {/* Debug Mode Toggle */}
             <Box>
               <FormControlLabel
@@ -441,6 +654,32 @@ export default function DeveloperModeDialog({
                 >
                   {t('openOutputs')}
                 </Button>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  size="small"
+                  onClick={async () => {
+                    setUpdateCheckMessage(null);
+                    try {
+                      const s = await window.api?.updateGetStatus?.();
+                      if (s?.disabled) {
+                        setUpdateCheckMessage('Updates disabled in dev');
+                        return;
+                      }
+                      window.api?.updateCheck?.();
+                      setUpdateCheckMessage('Checking for updates…');
+                    } catch {
+                      setUpdateCheckMessage('Update check failed');
+                    }
+                  }}
+                >
+                  Check for updates
+                </Button>
+                {updateCheckMessage && (
+                  <Typography variant="caption" color="text.secondary">
+                    {updateCheckMessage}
+                  </Typography>
+                )}
               </Stack>
             </Box>
           </Stack>

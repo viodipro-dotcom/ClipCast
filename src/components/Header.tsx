@@ -4,6 +4,8 @@ import type { SettingsPanelProps } from './SettingsPanel';
 import SettingsPanel from './SettingsPanel';
 import { useTranslation } from 'react-i18next';
 
+const logoUrl = new URL('../../assets/logo option 1.png', import.meta.url).href;
+
 interface HeaderProps {
   dark: boolean;
   settingsOpen: boolean;
@@ -29,7 +31,7 @@ export default function Header({
       <Stack direction="row" spacing={2} alignItems="center">
         <Box
           component="img"
-          src="/logo.png"
+          src={logoUrl}
           alt="ClipCast"
           sx={{
             width: 48,
