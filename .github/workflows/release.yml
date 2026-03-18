@@ -47,11 +47,13 @@ jobs:
           $rc = $LASTEXITCODE
           Write-Host "robocopy exit code: $rc"
           if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
+          $global:LASTEXITCODE = 0
           Write-Host "==> Verify copied runtime"
           if (-not (Test-Path vendor\python)) { throw "Missing vendor/python" }
           if (-not (Test-Path vendor\python\Scripts)) { throw "Missing vendor/python/Scripts" }
           if (-not (Test-Path vendor\python\Scripts\python.exe)) { throw "Missing vendor/python/Scripts/python.exe" }
           Get-Item vendor\python\Scripts\python.exe | Format-List Name,Length,FullName
+          exit 0
 
       - name: Prepare bundled ffmpeg/ffprobe
         shell: pwsh
