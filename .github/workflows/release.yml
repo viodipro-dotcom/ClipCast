@@ -21,8 +21,43 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Prepare bundled Python runtime
+        shell: pwsh
+        run: |
+          python -m venv .venv_clipcast
+          .\.venv_clipcast\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv_clipcast\Scripts\python.exe -m pip install -r yt_pipeline/requirements.txt
+          if (Test-Path vendor\python) { Remove-Item -Recurse -Force vendor\python }
+          New-Item -ItemType Directory -Force -Path vendor\python | Out-Null
+          robocopy .\.venv_clipcast vendor\python /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1
+          if ($LASTEXITCODE -ge 8) { exit $LASTEXITCODE }
+
+      - name: Prepare bundled ffmpeg/ffprobe
+        shell: pwsh
+        run: |
+          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $zipPath
+          if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          $rootDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+          if (-not $rootDir) { throw "ffmpeg archive root folder not found" }
+          $binDir = Join-Path $rootDir.FullName "bin"
+          if (-not (Test-Path $binDir)) { throw "ffmpeg bin folder not found: $binDir" }
+          New-Item -ItemType Directory -Force -Path vendor\bin | Out-Null
+          Copy-Item (Join-Path $binDir "ffmpeg.exe") -Destination vendor\bin\ffmpeg.exe -Force
+          Copy-Item (Join-Path $binDir "ffprobe.exe") -Destination vendor\bin\ffprobe.exe -Force
+          if (-not (Test-Path vendor\bin\ffmpeg.exe)) { throw "ffmpeg.exe missing after copy" }
+          if (-not (Test-Path vendor\bin\ffprobe.exe)) { throw "ffprobe.exe missing after copy" }
 
       - name: Build
         run: npm run build
