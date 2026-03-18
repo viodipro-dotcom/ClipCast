@@ -32,15 +32,26 @@ jobs:
       - name: Prepare bundled Python runtime
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "==> Create venv"
           python -m venv .venv_clipcast
+          Write-Host "==> Upgrade pip"
           .\.venv_clipcast\Scripts\python.exe -m pip install --upgrade pip
+          Write-Host "==> Install requirements"
           .\.venv_clipcast\Scripts\python.exe -m pip install -r yt_pipeline/requirements.txt
+          Write-Host "==> Recreate vendor/python"
           if (Test-Path vendor\python) { Remove-Item -Recurse -Force vendor\python }
           New-Item -ItemType Directory -Force -Path vendor\python | Out-Null
+          Write-Host "==> Copy venv to vendor/python"
           robocopy .\.venv_clipcast vendor\python /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1
           $rc = $LASTEXITCODE
-          if ($rc -ge 8) { exit $rc }
-          exit 0
+          Write-Host "robocopy exit code: $rc"
+          if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
+          Write-Host "==> Verify copied runtime"
+          if (-not (Test-Path vendor\python)) { throw "Missing vendor/python" }
+          if (-not (Test-Path vendor\python\Scripts)) { throw "Missing vendor/python/Scripts" }
+          if (-not (Test-Path vendor\python\Scripts\python.exe)) { throw "Missing vendor/python/Scripts/python.exe" }
+          Get-Item vendor\python\Scripts\python.exe | Format-List Name,Length,FullName
 
       - name: Prepare bundled ffmpeg/ffprobe
         shell: pwsh
