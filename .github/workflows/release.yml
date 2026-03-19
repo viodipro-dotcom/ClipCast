@@ -67,8 +67,8 @@ jobs:
           Write-Host "==> Verify embedded runtime"
           & $pythonExe -c "import sys; print(sys.executable)"
           if (-not (Test-Path $extractPath)) { throw "Missing vendor/python" }
-          if (-not (Test-Path (Join-Path $extractPath 'Scripts'))) { throw "Missing vendor/python/Scripts" }
-          if (-not (Test-Path (Join-Path $extractPath 'Scripts\python.exe'))) { throw "Missing vendor/python/Scripts/python.exe" }
+          if (-not (Test-Path (Join-Path $extractPath 'python.exe'))) { throw "Missing vendor/python/python.exe" }
+          if (-not (Test-Path (Join-Path $extractPath 'python312._pth'))) { throw "Missing vendor/python/python312._pth" }
 
       - name: Prepare bundled ffmpeg/ffprobe
         shell: pwsh
