@@ -24,11 +24,6 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-
       - name: Install dependencies
         run: npm ci
 
@@ -44,27 +39,36 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "==> Create venv"
-          python -m venv .venv_clipcast
+          $pyVersion = "3.12.10"
+          $pyZipUrl = "https://www.python.org/ftp/python/$pyVersion/python-$pyVersion-embed-amd64.zip"
+          $getPipUrl = "https://bootstrap.pypa.io/get-pip.py"
+          $zipPath = Join-Path $env:RUNNER_TEMP "python-embed.zip"
+          $extractPath = "vendor\python"
+          $getPipPath = Join-Path $env:RUNNER_TEMP "get-pip.py"
+          Write-Host "==> Download embeddable Python $pyVersion"
+          Invoke-WebRequest -Uri $pyZipUrl -OutFile $zipPath
+          if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
+          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+          Write-Host "==> Extract embeddable Python"
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          $pythonExe = Join-Path $extractPath "python.exe"
+          if (-not (Test-Path $pythonExe)) { throw "python.exe missing after extract: $pythonExe" }
+          Write-Host "==> Enable site-packages"
+          $pthFile = Join-Path $extractPath "python312._pth"
+          if (-not (Test-Path $pthFile)) { throw "python312._pth not found: $pthFile" }
+          (Get-Content $pthFile) -replace '^#import site','import site' | Set-Content $pthFile -Encoding ASCII
+          Write-Host "==> Install pip into embedded Python"
+          Invoke-WebRequest -Uri $getPipUrl -OutFile $getPipPath
+          & $pythonExe $getPipPath
           Write-Host "==> Upgrade pip"
-          .\.venv_clipcast\Scripts\python.exe -m pip install --upgrade pip
-          Write-Host "==> Install requirements"
-          .\.venv_clipcast\Scripts\python.exe -m pip install -r yt_pipeline/requirements.txt
-          Write-Host "==> Recreate vendor/python"
-          if (Test-Path vendor\python) { Remove-Item -Recurse -Force vendor\python }
-          New-Item -ItemType Directory -Force -Path vendor\python | Out-Null
-          Write-Host "==> Copy venv to vendor/python"
-          robocopy .\.venv_clipcast vendor\python /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1
-          $rc = $LASTEXITCODE
-          Write-Host "robocopy exit code: $rc"
-          if ($rc -ge 8) { throw "robocopy failed with exit code $rc" }
-          $global:LASTEXITCODE = 0
-          Write-Host "==> Verify copied runtime"
-          if (-not (Test-Path vendor\python)) { throw "Missing vendor/python" }
-          if (-not (Test-Path vendor\python\Scripts)) { throw "Missing vendor/python/Scripts" }
-          if (-not (Test-Path vendor\python\Scripts\python.exe)) { throw "Missing vendor/python/Scripts/python.exe" }
-          Get-Item vendor\python\Scripts\python.exe | Format-List Name,Length,FullName
-          exit 0
+          & $pythonExe -m pip install --upgrade pip
+          Write-Host "==> Install requirements into embedded Python"
+          & $pythonExe -m pip install -r yt_pipeline/requirements.txt
+          Write-Host "==> Verify embedded runtime"
+          & $pythonExe -c "import sys; print(sys.executable)"
+          if (-not (Test-Path $extractPath)) { throw "Missing vendor/python" }
+          if (-not (Test-Path (Join-Path $extractPath 'Scripts'))) { throw "Missing vendor/python/Scripts" }
+          if (-not (Test-Path (Join-Path $extractPath 'Scripts\python.exe'))) { throw "Missing vendor/python/Scripts/python.exe" }
 
       - name: Prepare bundled ffmpeg/ffprobe
         shell: pwsh
