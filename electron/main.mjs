@@ -2865,6 +2865,11 @@ async function createAssistCenterWindow() {
   if (assistCenterWindow) {
     assistCenterWindow.show();
     assistCenterWindow.focus();
+    try {
+      assistCenterWindow.webContents?.send('assistcenter:refresh');
+    } catch {
+      // ignore
+    }
     return assistCenterWindow;
   }
 
@@ -2904,6 +2909,14 @@ async function createAssistCenterWindow() {
   } else {
     win.loadFile(path.join(APP_ROOT, 'dist', 'index.html'), { hash: 'assist-center' });
   }
+
+  win.webContents.on('did-finish-load', () => {
+    try {
+      win.webContents.send('assistcenter:refresh');
+    } catch {
+      // ignore
+    }
+  });
 
   win.on('closed', () => {
     assistCenterWindow = null;
@@ -2999,6 +3012,11 @@ function toggleAssistCenter() {
       assistCenterWindow.show();
       assistCenterWindow.focus();
       console.log('[assist-center] Window shown');
+      try {
+        assistCenterWindow.webContents?.send('assistcenter:refresh');
+      } catch {
+        // ignore
+      }
     }
   } else {
     createAssistCenterWindow();

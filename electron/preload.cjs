@@ -144,6 +144,11 @@ contextBridge.exposeInMainWorld('api', {
   assistCenterAssistJob: (payload) => ipcRenderer.invoke('assistcenter:assistJob', payload),
   assistCenterMarkDone: (payload) => ipcRenderer.invoke('assistcenter:markDone', payload),
   assistCenterSkipJob: (payload) => ipcRenderer.invoke('assistcenter:skipJob', payload),
+  onAssistCenterRefresh: (cb) => {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('assistcenter:refresh', handler);
+    return () => ipcRenderer.removeListener('assistcenter:refresh', handler);
+  },
 
   // deep link (clipcast://auth/callback) for browser login flow — channel: "auth:deep-link"
   onAuthDeepLink: (cb) => {

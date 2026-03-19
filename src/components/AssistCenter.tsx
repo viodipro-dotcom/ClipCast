@@ -75,6 +75,14 @@ export default function AssistCenter() {
     return () => clearInterval(interval);
   }, [loadDueJobs]);
 
+  React.useEffect(() => {
+    const off = window.api?.onAssistCenterRefresh?.(() => {
+      setRefreshing(true);
+      loadDueJobs();
+    });
+    return () => off?.();
+  }, [loadDueJobs]);
+
   const handleAssist = async (jobId: string, platform: 'instagram' | 'tiktok') => {
     try {
       if (!window.api?.assistCenterAssistJob) return;

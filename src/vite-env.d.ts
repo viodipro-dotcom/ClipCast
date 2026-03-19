@@ -90,6 +90,7 @@ declare global {
       assistCenterAssistJob: (payload: { jobId: string; platform: 'instagram' | 'tiktok' }) => Promise<{ ok: boolean; error?: string }>;
       assistCenterMarkDone: (payload: { jobId: string; platform: 'instagram' | 'tiktok' }) => Promise<{ ok: boolean; error?: string }>;
       assistCenterSkipJob: (payload: { jobId: string; platform: 'instagram' | 'tiktok' }) => Promise<{ ok: boolean; error?: string; newPublishAtUtcMs?: number }>;
+      onAssistCenterRefresh: (cb: (data?: any) => void) => () => void;
 
       // templates
       templatesLoad: () => Promise<any[]>;
