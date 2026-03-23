@@ -69,6 +69,35 @@ process.on('unhandledRejection', (reason) => {
     // ignore
   }
 });
+
+const RENDERER_ERROR_LOG_NAME = 'renderer_errors.log';
+
+function writeRendererErrorLog(payload) {
+  try {
+    const userData = app.getPath('userData');
+    const logDir = path.join(userData, 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const logPath = path.join(logDir, RENDERER_ERROR_LOG_NAME);
+    const safe = (value) => redactSecrets(value ?? '');
+    const entry = {
+      timestamp: new Date().toISOString(),
+      appVersion: app.getVersion?.() || 'unknown',
+      type: typeof payload?.type === 'string' ? payload.type : 'unknown',
+      message: safe(payload?.message),
+      stack: payload?.stack ? safe(payload.stack) : null,
+      href: payload?.href ? safe(payload.href) : '',
+      hash: payload?.hash ? safe(payload.hash) : '',
+      source: payload?.source ? safe(payload.source) : '',
+      line: typeof payload?.line === 'number' ? payload.line : null,
+      column: typeof payload?.column === 'number' ? payload.column : null,
+    };
+    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`, 'utf8');
+    return logPath;
+  } catch (e) {
+    console.error('[renderer-log] Failed to write renderer error log', e);
+    return null;
+  }
+}
 let lastNotificationCount = { total: 0, instagram: 0, tiktok: 0 };
 let lastNotificationTime = 0;
 let ipcHandlersInitialized = false;
@@ -1195,6 +1224,11 @@ async function initIpcHandlers() {
     const next = setUpdaterNextPromptAt(now + ONE_HOUR_MS);
     scheduleUpdateCheckFromConfig();
     return { ok: true, nextPromptAtMs: next.nextPromptAtMs };
+  });
+
+  ipcMain.handle('renderer:logError', async (_e, payload) => {
+    const logPath = writeRendererErrorLog(payload);
+    return logPath ? { ok: true, path: logPath } : { ok: false };
   });
 
   ipcMain.handle('diagnostics:exportSupportBundle', async (_evt, authSnapshotFromRenderer) => {

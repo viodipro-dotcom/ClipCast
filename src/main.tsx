@@ -1,18 +1,12 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import RendererErrorBoundary from "./components/RendererErrorBoundary";
 import { NetworkStatusProvider } from "./lib/networkStatus";
+import { attachRendererErrorHandlers } from "./lib/rendererErrorLogger";
 import "./i18n";
 
 // Subscribe to auth callback (deep link) as early as possible so we never miss it
-declare global {
-  interface Window {
-    api?: { onAuthDeepLink?: (cb: (url: string) => void) => () => void };
-    clipcast?: {
-      onAuthCallback?: (cb: (url: string) => void) => () => void;
-    };
-  }
-}
 const subscribeAuthCallback = (url: string) => {
   console.log("[auth] renderer received callback:", url);
   window.dispatchEvent(new CustomEvent("clipcast-deep-link", { detail: url }));
@@ -33,12 +27,15 @@ if (typeof window !== "undefined") {
     VITE_SUPABASE_URL: !!url,
     VITE_SUPABASE_ANON_KEY: !!anon,
   };
+  attachRendererErrorHandlers();
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <NetworkStatusProvider>
-      <App />
-    </NetworkStatusProvider>
+    <RendererErrorBoundary>
+      <NetworkStatusProvider>
+        <App />
+      </NetworkStatusProvider>
+    </RendererErrorBoundary>
   </React.StrictMode>
 );

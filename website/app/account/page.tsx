@@ -5,7 +5,7 @@ import {
   getCurrentUserSubscription,
 } from "@/lib/supabase/server";
 import { planDisplayName } from "@/lib/plans";
-import { getUsage } from "@/lib/usage/getUsage";
+import { getUsage, mapAccountStatus } from "@/lib/usage/getUsage";
 import { UsageCard } from "@/components/account/UsageCard";
 import { AccountSection } from "./AccountSection";
 import { AccountErrorBanner } from "./AccountErrorBanner";
@@ -53,18 +53,15 @@ export default async function AccountPage({
     process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   );
 
-  const plan = entitlement?.plan ?? "try_free";
-  const status = entitlement?.status ?? "inactive";
+  const accountStatus = mapAccountStatus(entitlement, subscription);
+  const plan = accountStatus.plan;
+  const status = accountStatus.status;
   const planLabel = planDisplayName(plan);
 
   const isCancelAtPeriodEnd = Boolean(subscription?.cancel_at_period_end);
 
-  // Date to show: prefer current_period_end; when canceling, fallback to cancel_at (synced from Stripe)
-  const periodEndTimestamp =
-    subscription?.current_period_end ??
-    (isCancelAtPeriodEnd && subscription?.cancel_at ? subscription.cancel_at : null);
-  const periodEndDate = periodEndTimestamp
-    ? new Date(periodEndTimestamp).toLocaleDateString("en-GB", {
+  const periodEndDate = accountStatus.periodEnd
+    ? new Date(accountStatus.periodEnd).toLocaleDateString("en-GB", {
         year: "numeric",
         month: "short",
         day: "numeric",
@@ -156,6 +153,18 @@ export default async function AccountPage({
             Subscribe to a plan to manage billing and payment methods.
           </p>
         )}
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>Desktop app</h2>
+        <div className={styles.row}>
+          Download the Windows installer to start using ClipCast locally.
+        </div>
+        <div className={styles.actions}>
+          <Link href="/download" className={`${styles.button} ${styles.buttonPrimary}`}>
+            Download desktop app
+          </Link>
+        </div>
       </section>
 
       <UsageCard signedIn={!!user} usage={usage} />

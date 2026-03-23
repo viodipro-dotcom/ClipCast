@@ -21,7 +21,7 @@ export default function HomePage() {
             </p>
             <div className={styles.heroActions}>
               <Link href="/download" className={styles.ctaPrimary}>
-                Download free
+                Download app
               </Link>
               <Link href="/guide" className={styles.ctaSecondary}>
                 Read the guide
@@ -116,7 +116,7 @@ export default function HomePage() {
         <p>Get started in minutes. No account required to try.</p>
         <div className={styles.ctaSectionActions}>
           <Link href="/download" className={styles.ctaPrimary}>
-            Download free
+            Download app
           </Link>
           <Link href="/guide" className={styles.ctaSecondary}>
             Read the guide

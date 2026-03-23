@@ -98,6 +98,11 @@ export default async function PricingPage() {
         <p className={styles.subtitle}>
           Start with a 1-day free trial, then choose the plan that fits. Agency for teams is coming soon.
         </p>
+        <div className={styles.heroActions}>
+          <Link href="/download" className={styles.ctaSecondary}>
+            Download app
+          </Link>
+        </div>
       </section>
 
       <section className={styles.plans}>

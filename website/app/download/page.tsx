@@ -1,59 +1,85 @@
-import Link from "next/link";
 import styles from "./page.module.css";
+import {
+  getLatestReleaseInfo,
+  LATEST_RELEASE_URL,
+  RELEASES_PAGE_URL,
+} from "@/lib/releases";
 
-export default function DownloadPage() {
+export default async function DownloadPage() {
+  const releaseInfo = await getLatestReleaseInfo();
+  const versionLabel = releaseInfo?.version ?? "Latest";
+  const downloadHref = releaseInfo?.installerUrl ?? RELEASES_PAGE_URL;
+  const releaseNotesHref = releaseInfo?.releaseUrl ?? LATEST_RELEASE_URL;
+  const isFallback = !releaseInfo?.installerUrl;
+
   return (
     <div className={styles.container}>
       <section className={styles.hero}>
         <h1>Download ClipCast</h1>
         <p className={styles.subtitle}>
-          Get the desktop app for Windows and macOS. Install once and run locally — your videos and metadata stay on your machine.
+          Install the desktop app for Windows.
         </p>
-        <p className={styles.heroActions}>
-          <Link href="/guide" className={styles.ctaSecondary}>
-            Read the guide
-          </Link>
+        <p className={styles.platformNote}>
+          Currently available for Windows 10/11 only.
         </p>
       </section>
 
       <section className={styles.downloads}>
         <div className={styles.card}>
-          <div className={styles.platformIcon}>🪟</div>
-          <h2>Windows</h2>
-          <p>Windows 10 or later (64-bit)</p>
-          <p className={styles.muted}>Download the installer and run it. Requires Visual C++ Redistributable if not already installed.</p>
-          <Link href="#" className={styles.downloadBtn}>
-            Download
-          </Link>
-        </div>
-        <div className={styles.card}>
-          <div className={styles.platformIcon}>🍎</div>
-          <h2>macOS</h2>
-          <p>macOS 10.15 (Catalina) or later</p>
-          <p className={styles.muted}>Download the .dmg file. On first launch, go to System Preferences → Security &amp; Privacy if the app is blocked.</p>
-          <Link href="#" className={styles.downloadBtn}>
-            Download
-          </Link>
+          <div className={styles.platformHeader}>
+            <span className={styles.platformIcon} aria-hidden>
+              🪟
+            </span>
+            <div>
+              <h2>Windows installer</h2>
+              <p className={styles.platformText}>
+                Download the latest ClipCast desktop app for Windows.
+              </p>
+            </div>
+          </div>
+          <div className={styles.downloadActions}>
+            <a
+              className={styles.downloadBtn}
+              href={downloadHref}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Download for Windows
+            </a>
+            <a
+              className={styles.ctaSecondary}
+              href={releaseNotesHref}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View release notes
+            </a>
+          </div>
+          <div className={styles.downloadMeta}>
+            <span>Version: {versionLabel}</span>
+            <span>File type: .exe</span>
+            <span>Auto-update supported</span>
+          </div>
+          {isFallback && (
+            <p className={styles.fallbackNote}>
+              Latest installer available on GitHub Releases.
+            </p>
+          )}
         </div>
       </section>
 
       <section className={styles.requirements}>
-        <h2>Requirements</h2>
-        <p className={styles.requirementsLead}>
-          Most users can install and run in minutes.
-        </p>
-        <details className={styles.requirementsDetails}>
-          <summary>Advanced requirements</summary>
-          <ul>
-            <li><strong>Python</strong> (metadata pipeline) — installed separately or bundled</li>
-            <li><strong>YouTube</strong> — Google account with OAuth client (Desktop app type)</li>
-            <li><strong>Storage</strong> — Space for pipeline outputs (transcripts, exports)</li>
-          </ul>
-        </details>
+        <h2>System requirements</h2>
+        <ul className={styles.requirementsList}>
+          <li>Windows 10 or 11 (64-bit).</li>
+          <li>
+            Internet required for sign-in, metadata, billing checks, and uploads.
+          </li>
+        </ul>
       </section>
 
       <p className={styles.back}>
-        <Link href="/">← Back to Home</Link>
+        <a href="/">← Back to Home</a>
       </p>
     </div>
   );

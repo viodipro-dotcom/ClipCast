@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('api', {
   // auth
   authSetSupabaseAccessToken: (token, functionsUrl) =>
     ipcRenderer.invoke('auth:setSupabaseAccessToken', token, functionsUrl),
+  logRendererError: (payload) => ipcRenderer.invoke('renderer:logError', payload),
 
   // outputs folder (Developer Mode)
   getOutputsDir: () => ipcRenderer.invoke('settings:getOutputsDir'),

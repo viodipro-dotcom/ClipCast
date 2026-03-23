@@ -15,12 +15,12 @@ Outputs go to <code>yt_pipeline/outputs</code> (relative to the app). Logs strea
 
 ### What the pipeline does per video
 
-1. **Audio** — Extracts audio with ffmpeg → <code>outputs/Audio/{'{stem}'}.mp3</code> (mono 16 kHz). Skipped if the file already exists and is non-empty.
-2. **Transcript** — Transcribes with faster-whisper → <code>outputs/Transcripts/{'{stem}'}.txt</code>. Skipped if a transcript file already exists and is non-empty; otherwise the existing file is used. If the transcript is too short (e.g. under 40 characters), the pipeline stops with an error for that video.
-3. **Metadata** — Generates title, description, and hashtags with OpenAI using your **Custom AI** settings (loaded from app user data). Writes <code>outputs/Metadata/{'{stem}'}.json</code>. If metadata for the requested platform(s) already exists, OpenAI is skipped and existing metadata is reused (or merged when only some platforms were requested).
-4. **Exports** — Writes platform-specific files under <code>outputs/Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>: <code>{'{stem}'}.title.txt</code>, <code>{'{stem}'}.description.txt</code>, <code>{'{stem}'}.hashtags.txt</code>, <code>{'{stem}'}.json</code>. Only the platforms that were requested (or all three if none specified) are written.
+1. **Audio** — Extracts audio with ffmpeg → <code>outputs/Audio/&#123;stem&#125;.mp3</code> (mono 16 kHz). Skipped if the file already exists and is non-empty.
+2. **Transcript** — Transcribes with faster-whisper → <code>outputs/Transcripts/&#123;stem&#125;.txt</code>. Skipped if a transcript file already exists and is non-empty; otherwise the existing file is used. If the transcript is too short (e.g. under 40 characters), the pipeline stops with an error for that video.
+3. **Metadata** — Generates title, description, and hashtags with OpenAI using your **Custom AI** settings (loaded from app user data). Writes <code>outputs/Metadata/&#123;stem&#125;.json</code>. If metadata for the requested platform(s) already exists, OpenAI is skipped and existing metadata is reused (or merged when only some platforms were requested).
+4. **Exports** — Writes platform-specific files under <code>outputs/Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>: <code>&#123;stem&#125;.title.txt</code>, <code>&#123;stem&#125;.description.txt</code>, <code>&#123;stem&#125;.hashtags.txt</code>, <code>&#123;stem&#125;.json</code>. Only the platforms that were requested (or all three if none specified) are written.
 
-The <code>{'{stem}'}</code> is derived from the video filename (normalized) plus a short path hash to avoid collisions between videos with the same name in different folders.
+The <code>&#123;stem&#125;</code> is derived from the video filename (normalized) plus a short path hash to avoid collisions between videos with the same name in different folders.
 
 ### How to run the pipeline
 
@@ -37,7 +37,7 @@ The app runs the Python script; progress and logs appear in the **Pipeline Log**
 </StepBlock>
 
 <StepBlock title="Step 4 — Find outputs" imageSrc="/docs/images/pipeline/04-find-outputs.jpg" imageAlt="Pipeline outputs" caption="Screenshot 04 — Outputs in yt_pipeline/outputs">
-When the run finishes, outputs are in <code>yt_pipeline/outputs</code>: <code>Audio</code>, <code>Transcripts</code>, <code>Metadata</code>, and <code>Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>. Run reports and logs are written to <code>yt_pipeline/outputs/Reports/</code> (e.g. <code>last_run.log</code>, <code>report_*.txt</code>, <code>report_*.csv</code>). Use **Open outputs** or **Open exports** in the Details panel to open these folders.
+When the run finishes, outputs are in <code>yt_pipeline/outputs</code>: <code>Audio</code>, <code>Transcripts</code>, <code>Metadata</code>, and <code>Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>. Run reports and logs are written to <code>yt_pipeline/outputs/Reports/</code> (e.g. <code>last_run.log</code>, <code>report_&#42;.txt</code>, <code>report_&#42;.csv</code>). Use **Open outputs** or **Open exports** in the Details panel to open these folders.
 </StepBlock>
 
 **Common issues**

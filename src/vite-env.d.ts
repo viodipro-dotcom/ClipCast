@@ -39,6 +39,17 @@ export type DiagnosticsAuthSnapshot = {
   } | null;
 };
 
+export type RendererErrorPayload = {
+  type: "errorboundary" | "window.onerror" | "unhandledrejection";
+  message: string;
+  stack?: string;
+  source?: string;
+  line?: number;
+  column?: number;
+  href?: string;
+  hash?: string;
+};
+
 declare global {
   interface Window {
     clipcast?: {
@@ -237,6 +248,7 @@ declare global {
       updateInstall: () => Promise<void>;
       updateGetStatus: () => Promise<UpdateStatus>;
       updateDismiss: () => Promise<{ ok: boolean; nextPromptAtMs?: number } | { disabled: true; reason?: string }>;
+      logRendererError: (payload: RendererErrorPayload) => Promise<{ ok: boolean; path?: string } | { ok: false }>;
       diagnosticsExportSupportBundle: (authSnapshot: DiagnosticsAuthSnapshot) => Promise<
         { ok: true; path: string } | { ok: false; error: string }
       >;

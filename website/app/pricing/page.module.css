@@ -25,6 +25,10 @@
   line-height: 1.6;
 }
 
+.heroActions {
+  margin-top: 1.25rem;
+}
+
 .plans {
   margin: 2rem 0;
   display: grid;

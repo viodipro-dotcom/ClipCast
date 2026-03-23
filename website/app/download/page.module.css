@@ -25,8 +25,10 @@
   line-height: 1.6;
 }
 
-.heroActions {
-  margin: 1.25rem 0 0;
+.platformNote {
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  color: var(--text-muted);
 }
 
 .ctaSecondary {
@@ -54,9 +56,6 @@
 }
 
 .downloads {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1.5rem;
   margin: 2rem 0;
 }
 
@@ -71,7 +70,6 @@
 
 .platformIcon {
   font-size: 2rem;
-  margin-bottom: 0.75rem;
 }
 
 .card h2 {
@@ -88,6 +86,41 @@
 
 .muted {
   font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.platformHeader {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.platformText {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.downloadActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  align-items: center;
+}
+
+.downloadMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.fallbackNote {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
   color: var(--text-muted);
 }
 
@@ -139,46 +172,8 @@
   color: var(--text);
 }
 
-.requirementsLead {
+.requirementsList {
   margin: 0;
-  font-size: 1.05rem;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-.requirementsDetails {
-  margin-top: 1rem;
-  border-top: 1px solid var(--border);
-  padding-top: 1rem;
-}
-
-.requirementsDetails summary {
-  cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text);
-  list-style: none;
-  user-select: none;
-}
-
-.requirementsDetails summary::-webkit-details-marker {
-  display: none;
-}
-
-.requirementsDetails summary::before {
-  content: "▶";
-  display: inline-block;
-  margin-right: 0.5rem;
-  font-size: 0.7rem;
-  transition: transform 0.2s;
-}
-
-.requirementsDetails[open] summary::before {
-  transform: rotate(90deg);
-}
-
-.requirementsDetails ul {
-  margin: 0.75rem 0 0;
   padding-left: 1.5rem;
   color: var(--text-muted);
   line-height: 1.7;
