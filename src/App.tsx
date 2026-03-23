@@ -9075,7 +9075,13 @@ const add = async () => {
           autoUploadEnabled={autoEnabled}
           silentMode={silentMode}
           jobsCount={rowsById.size}
-          processingCount={Array.from(rowsById.values()).filter(r => r.status === 'Processing').length}
+          processingCount={Array.from(rowsById.values()).filter((r) => r.status === 'Processing').length}
+          signedIn={Boolean(supabaseUser)}
+          userEmail={supabaseUser?.email ?? null}
+          plan={entitlement?.plan ?? null}
+          subscriptionStatus={entitlement?.status ?? null}
+          usageSnapshot={usageSnapshot}
+          onSnack={setSnack}
         />
 
         {/* Developer Mode Dialog */}

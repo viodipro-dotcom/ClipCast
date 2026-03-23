@@ -18,6 +18,7 @@ import {
 } from './secrets.mjs';
 import { clearYouTubeTokensCache } from './youtube.mjs';
 import * as updateService from './updateService.mjs';
+import { exportDiagnosticsBundle } from './diagnosticsExport.mjs';
 import {
   resolveBundledPythonExe,
   runPythonSmokeTest,
@@ -1194,6 +1195,30 @@ async function initIpcHandlers() {
     const next = setUpdaterNextPromptAt(now + ONE_HOUR_MS);
     scheduleUpdateCheckFromConfig();
     return { ok: true, nextPromptAtMs: next.nextPromptAtMs };
+  });
+
+  ipcMain.handle('diagnostics:exportSupportBundle', async (_evt, authSnapshotFromRenderer) => {
+    console.log('[diagnostics] export started');
+    try {
+      const result = await exportDiagnosticsBundle({
+        authSnapshotFromRenderer,
+        getPipelinePythonPath,
+        getDeveloperOptions,
+        getComputeBackend,
+        getOutputsSubdir,
+        updateGetStatus: () => updateService.getStatus(),
+      });
+      if (result?.ok && result.path) {
+        console.log('[diagnostics] export completed:', result.path);
+      } else {
+        console.warn('[diagnostics] export finished without path', result);
+      }
+      return result;
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      console.error('[diagnostics] export failed:', msg);
+      return { ok: false, error: msg };
+    }
   });
 
   // Register fallback handlers first to ensure they're always available

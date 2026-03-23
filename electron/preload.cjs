@@ -163,6 +163,9 @@ contextBridge.exposeInMainWorld('api', {
   updateInstall: () => ipcRenderer.invoke('update:install'),
   updateGetStatus: () => ipcRenderer.invoke('update:getStatus'),
   updateDismiss: () => ipcRenderer.invoke('update:dismiss'),
+  diagnosticsExportSupportBundle: (authSnapshot) =>
+    ipcRenderer.invoke('diagnostics:exportSupportBundle', authSnapshot),
+  pathsOpen: (targetPath) => ipcRenderer.invoke('paths:open', targetPath),
   onUpdateStatus: (cb) => {
     const handler = (_event, data) => cb(data);
     ipcRenderer.on('update:status', handler);

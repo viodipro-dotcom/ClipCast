@@ -26,6 +26,19 @@ export type PipelineFileDoneMsg = {
   at?: number;
 };
 
+export type DiagnosticsAuthSnapshot = {
+  signedIn: boolean;
+  userEmail?: string | null;
+  plan?: string | null;
+  subscriptionStatus?: string | null;
+  usage?: {
+    uploads_used?: number;
+    metadata_used?: number;
+    uploads_limit?: number | null;
+    metadata_limit?: number | null;
+  } | null;
+};
+
 declare global {
   interface Window {
     clipcast?: {
@@ -224,6 +237,10 @@ declare global {
       updateInstall: () => Promise<void>;
       updateGetStatus: () => Promise<UpdateStatus>;
       updateDismiss: () => Promise<{ ok: boolean; nextPromptAtMs?: number } | { disabled: true; reason?: string }>;
+      diagnosticsExportSupportBundle: (authSnapshot: DiagnosticsAuthSnapshot) => Promise<
+        { ok: true; path: string } | { ok: false; error: string }
+      >;
+      pathsOpen: (targetPath: string) => Promise<{ ok: boolean; error?: string }>;
       onUpdateStatus: (cb: (status: UpdateStatus) => void) => () => void;
     };
   }
