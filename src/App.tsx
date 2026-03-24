@@ -127,10 +127,10 @@ type SubscriptionRow = {
   ended_at?: string | number | null;
 };
 
-const PRICING_URL = 'https://clip-cast-murex.vercel.app/pricing';
-const BILLING_URL = 'https://clip-cast-murex.vercel.app/account';
+const PRICING_URL = 'https://getclipcast.app/pricing';
+const BILLING_URL = 'https://getclipcast.app/account';
 /** Placeholder help URL for YouTube account verification (daily upload limit). */
-const YOUTUBE_VERIFICATION_GUIDE_URL = 'https://clip-cast-murex.vercel.app/guide/youtube-verification';
+const YOUTUBE_VERIFICATION_GUIDE_URL = 'https://getclipcast.app/guide/youtube-verification';
 
 /** Classify YouTube upload response as daily upload limit / verification required (do not charge credits, do not retry). */
 function isYoutubeDailyLimitError(res: { dailyUploadLimit?: boolean; error?: string } | null | undefined): boolean {

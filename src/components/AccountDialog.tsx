@@ -87,8 +87,8 @@ export default function AccountDialog({
   }, [onSignOut]);
 
   const openExternal = window.clipcast?.openExternal ?? window.api?.openExternal;
-  const BILLING_URL = 'https://clip-cast-murex.vercel.app/account';
-  const PRICING_URL = 'https://clip-cast-murex.vercel.app/pricing';
+  const BILLING_URL = 'https://getclipcast.app/account';
+  const PRICING_URL = 'https://getclipcast.app/pricing';
 
   const prettyPlan = React.useCallback((planId?: string) => {
     const value = String(planId || 'try_free');

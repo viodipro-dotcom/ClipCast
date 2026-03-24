@@ -32,7 +32,7 @@ export default function SupportPage() {
           <h2>📬 Contact</h2>
           <p>
             Report an issue or get help:{" "}
-            <a href="mailto:support@clipcast.app">support@clipcast.app</a>.
+            <a href="mailto:support@getclipcast.app?subject=ClipCast%20Support">support@getclipcast.app</a>.
             Include <strong>Diagnostics</strong> logs when reporting.
           </p>
         </div>

@@ -32,7 +32,7 @@ export default function TermsPage() {
         <h2>4. Refunds</h2>
         <p>
           We do not offer refunds for partial billing periods. If you believe you have been charged in error or have an exceptional issue, contact us at{" "}
-          <a href="mailto:support@clipcast.app">support@clipcast.app</a> and we will review your case.
+          <a href="mailto:support@getclipcast.app">support@getclipcast.app</a> and we will review your case.
         </p>
       </section>
 
@@ -54,7 +54,7 @@ export default function TermsPage() {
         <h2>7. Contact</h2>
         <p>
           For questions about these terms, contact us at{" "}
-          <a href="mailto:support@clipcast.app">support@clipcast.app</a>.
+          <a href="mailto:support@getclipcast.app">support@getclipcast.app</a>.
         </p>
       </section>
 

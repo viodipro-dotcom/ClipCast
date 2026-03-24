@@ -55,7 +55,7 @@ export default function PrivacyPage() {
         <h2>6. Contact</h2>
         <p>
           For privacy-related requests or questions, contact us at{" "}
-          <a href="mailto:support@clipcast.app">support@clipcast.app</a>.
+          <a href="mailto:support@getclipcast.app">support@getclipcast.app</a>.
         </p>
       </section>
 
