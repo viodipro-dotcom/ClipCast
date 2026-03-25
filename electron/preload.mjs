@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld("api", {
 
   // pipeline
   runPipeline: (payload) => ipcRenderer.invoke("pipeline:runPipeline", payload),
-  cancelPipeline: () => ipcRenderer.invoke("pipeline:cancel"),
+  cancelPipeline: (payload) => ipcRenderer.invoke("pipeline:cancel", payload),
 
   // events
   onPipelineLog: (cb) => {

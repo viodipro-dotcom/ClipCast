@@ -111,6 +111,13 @@ type LimitDialogState = {
   snapshot: UsageSnapshot | null;
 };
 
+type MetadataQueueItem = {
+  id: string;
+  filePaths: string[];
+  platforms?: MetaPlatform[];
+  queuedAt: number;
+};
+
 type EntitlementRow = {
   plan: string;
   status: string;
@@ -1240,7 +1247,85 @@ export default function App() {
   const [metaPlatform, setMetaPlatform] = React.useState<MetaPlatform>('youtube');
   /** File paths for which metadata generation is currently running or queued (single-flight per file). */
   const [metadataGenerationBusyPaths, setMetadataGenerationBusyPaths] = React.useState<ReadonlySet<string>>(new Set());
+  const metadataBusyPathsRef = React.useRef<Set<string>>(new Set());
+  const metadataQueueRef = React.useRef<MetadataQueueItem[]>([]);
+  const metadataActiveRef = React.useRef<MetadataQueueItem | null>(null);
+  const metadataCancelRef = React.useRef<{ id: string; reason: 'user' | 'shortcut' | 'shutdown' } | null>(null);
+  const [metadataQueueCounts, setMetadataQueueCounts] = React.useState<{ running: number; queued: number }>({ running: 0, queued: 0 });
   const [snack, setSnack] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    metadataBusyPathsRef.current = new Set(metadataGenerationBusyPaths);
+  }, [metadataGenerationBusyPaths]);
+
+  const refreshMetadataQueueCounts = React.useCallback(() => {
+    setMetadataQueueCounts({
+      running: metadataActiveRef.current ? 1 : 0,
+      queued: metadataQueueRef.current.length,
+    });
+  }, []);
+
+  const addMetadataBusyPaths = React.useCallback((paths: string[]) => {
+    if (!paths.length) return;
+    setMetadataGenerationBusyPaths((prev) => {
+      const next = new Set(prev);
+      paths.forEach((p) => next.add(p));
+      metadataBusyPathsRef.current = new Set(next);
+      return next;
+    });
+  }, []);
+
+  const removeMetadataBusyPaths = React.useCallback((paths: string[]) => {
+    if (!paths.length) return;
+    setMetadataGenerationBusyPaths((prev) => {
+      const next = new Set(prev);
+      paths.forEach((p) => next.delete(p));
+      metadataBusyPathsRef.current = new Set(next);
+      return next;
+    });
+  }, []);
+
+  const stopCurrentMetadataJob = React.useCallback(async (reason: 'user' | 'shortcut' | 'shutdown' = 'user') => {
+    const activeJob = metadataActiveRef.current;
+    if (!activeJob) return false;
+    metadataCancelRef.current = { id: activeJob.id, reason };
+    try {
+      await window.api?.cancelPipeline?.({ reason });
+    } catch (e) {
+      console.error('[metadata] Failed to cancel pipeline:', e);
+    }
+    return true;
+  }, []);
+
+  const cancelQueuedMetadataJobs = React.useCallback(() => {
+    const queued = metadataQueueRef.current;
+    if (queued.length === 0) return { count: 0 };
+    metadataQueueRef.current = [];
+    refreshMetadataQueueCounts();
+    const paths = new Set<string>();
+    for (const job of queued) {
+      job.filePaths.forEach((p) => paths.add(p));
+    }
+    removeMetadataBusyPaths(Array.from(paths));
+    return { count: paths.size };
+  }, [refreshMetadataQueueCounts, removeMetadataBusyPaths]);
+
+  const stopAllMetadataJobs = React.useCallback(async (reason: 'user' | 'shortcut' | 'shutdown' = 'user') => {
+    const stoppedCurrent = await stopCurrentMetadataJob(reason);
+    const { count } = cancelQueuedMetadataJobs();
+    if (stoppedCurrent || count > 0) {
+      setSnack(t('metadataAllJobsStopped'));
+    }
+  }, [cancelQueuedMetadataJobs, setSnack, stopCurrentMetadataJob, t]);
+
+  const handleStopCurrentMetadata = React.useCallback(async () => {
+    const stopped = await stopCurrentMetadataJob('user');
+    if (stopped) setSnack(t('metadataRunningJobStopped'));
+  }, [setSnack, stopCurrentMetadataJob, t]);
+
+  const handleCancelQueuedMetadata = React.useCallback(() => {
+    const { count } = cancelQueuedMetadataJobs();
+    if (count > 0) setSnack(t('metadataQueuedJobsCancelled', { count }));
+  }, [cancelQueuedMetadataJobs, setSnack, t]);
   React.useEffect(() => {
     const prev = lastNetworkStatusRef.current;
     if (!prev) {
@@ -4890,6 +4975,13 @@ React.useEffect(() => {
         void performRedo();
         return;
       }
+
+      // Ctrl+Shift+X to stop metadata pipeline + clear queue
+      if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'x' && !isInputFocused) {
+        e.preventDefault();
+        void stopAllMetadataJobs('shortcut');
+        return;
+      }
       
       // Delete key
       if (e.key === 'Delete' && !isInputFocused) {
@@ -4903,7 +4995,7 @@ React.useEffect(() => {
     
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedIds, performUndo, performRedo]);
+  }, [selectedIds, performUndo, performRedo, stopAllMetadataJobs]);
 
   // Remove a single scheduled job or a platform from a job
   const removeJob = React.useCallback(async (jobId: string, platform?: 'youtube' | 'instagram' | 'tiktok') => {
@@ -7383,7 +7475,11 @@ const add = async () => {
     });
   };
 
-  const generateMetadata = async (specificRows?: JobRow[], platformsToGenerate?: ('youtube' | 'instagram' | 'tiktok')[]) => {
+  const generateMetadata = async (
+    specificRows?: JobRow[],
+    platformsToGenerate?: ('youtube' | 'instagram' | 'tiktok')[],
+    options?: { skipQueue?: boolean; allowBusyPaths?: Set<string>; jobId?: string },
+  ) => {
     if (!window.api?.runPipeline) return;
     if (!requireOnline()) return;
     if (!ensureSignedIn()) return;
@@ -7549,13 +7645,23 @@ const add = async () => {
       return;
     }
 
-    // Single-flight: skip files already running or queued for metadata generation
-    const toProcess = needsMetadata.filter((row) => !metadataGenerationBusyPaths.has(row.filePath));
+    const allowBusyPaths = options?.allowBusyPaths;
+    const busyPaths = metadataBusyPathsRef.current;
+    // Single-flight: skip files already running or queued for metadata generation (unless explicitly allowed)
+    const toProcess = needsMetadata.filter((row) => {
+      const isBusy = busyPaths.has(row.filePath);
+      return !isBusy || (allowBusyPaths && allowBusyPaths.has(row.filePath));
+    });
     if (toProcess.length === 0) {
       setSnack(t('metadataAlreadyProcessingOrQueued'));
       return;
     }
-    if (toProcess.length < needsMetadata.length) {
+    const paths = toProcess.map((t) => t.filePath);
+    const willQueue = !options?.skipQueue && Boolean(metadataActiveRef.current);
+
+    if (willQueue) {
+      setSnack(t('metadataQueued', { count: toProcess.length }));
+    } else if (toProcess.length < needsMetadata.length) {
       setSnack(t('metadataSkippingBusy', { skipped: needsMetadata.length - toProcess.length, processing: toProcess.length }));
     } else if (toProcess.length < target.length) {
       setSnack(t('skippingExistingMetadata', { skipped: target.length - toProcess.length, processing: toProcess.length }));
@@ -7572,17 +7678,44 @@ const add = async () => {
       }
     }
 
+    const job: MetadataQueueItem = {
+      id: options?.jobId || newId(),
+      filePaths: paths,
+      platforms: platformsToGenerate,
+      queuedAt: Date.now(),
+    };
+
+    if (willQueue) {
+      addMetadataBusyPaths(paths);
+      metadataQueueRef.current.push(job);
+      refreshMetadataQueueCounts();
+      return;
+    }
+
+    addMetadataBusyPaths(paths);
+    if (metadataActiveRef.current && metadataActiveRef.current.id !== job.id) {
+      removeMetadataBusyPaths(paths);
+      setSnack(t('metadataAlreadyProcessingOrQueued'));
+      return;
+    }
+    metadataActiveRef.current = job;
+    metadataCancelRef.current = null;
+    refreshMetadataQueueCounts();
+
     let metadataReservations: Map<string, string> | null = null;
     try {
       metadataReservations = await reserveQuotaForRows(toProcess, 'metadata');
       setSnack(t('metadataCreditsReserved', { count: metadataReservations.size }));
     } catch (err) {
       handleBillingError(err, 'metadata');
+      removeMetadataBusyPaths(paths);
+      if (metadataActiveRef.current?.id === job.id) {
+        metadataActiveRef.current = null;
+        metadataCancelRef.current = null;
+      }
+      refreshMetadataQueueCounts();
       return;
     }
-
-    const paths = toProcess.map((t) => t.filePath);
-    setMetadataGenerationBusyPaths((prev) => new Set([...prev, ...paths]));
 
     try {
       // Set "Processing" status ONLY for files we are actually processing
@@ -7678,6 +7811,65 @@ const add = async () => {
 
       // Clear the interval when pipeline completes
       clearInterval(checkInterval);
+
+      const canceled = metadataCancelRef.current?.id === job.id || Boolean(res?.canceled);
+      if (canceled) {
+        const results = await Promise.all(
+          toProcess.map(async (row) => ({
+            row,
+            filePath: row.filePath,
+            hasMetadata: await checkMetadataOnDisk(row.filePath),
+          })),
+        );
+        let releasedCount = 0;
+        if (metadataReservations) {
+          for (const result of results) {
+            const reservationId = metadataReservations.get(result.filePath);
+            if (!reservationId) continue;
+            if (result.hasMetadata) {
+              try {
+                await finalizeQuota(reservationId);
+              } catch (err) {
+                console.error('Failed to finalize metadata quota after cancel:', err);
+              }
+            } else {
+              try {
+                await releaseQuota(reservationId);
+                releasedCount += 1;
+              } catch (err) {
+                console.error('Failed to release metadata quota after cancel:', err);
+              }
+            }
+          }
+        }
+
+        const cancelLogLine = t('metadataCancelledLog');
+        setLogsById((prev) => {
+          const next = new Map(prev);
+          for (const result of results) {
+            if (result.hasMetadata) continue;
+            const currentLog = next.get(result.row.id) || '';
+            const appended = currentLog ? `${currentLog}\n${cancelLogLine}` : cancelLogLine;
+            next.set(result.row.id, appended);
+          }
+          return next;
+        });
+
+        for (const result of results) {
+          if (result.hasMetadata) {
+            updateRow(result.row.id, (r) => ({ ...r, status: 'Done' as const }));
+          } else {
+            updateRow(result.row.id, (r) => ({ ...r, status: 'Ready' as const }));
+          }
+        }
+
+        const releasedNote = releasedCount > 0 ? ` ${t('metadataCreditsReleased', { count: releasedCount })}` : '';
+        const cancelReason = metadataCancelRef.current?.id === job.id ? metadataCancelRef.current?.reason : null;
+        if (cancelReason !== 'user' && cancelReason !== 'shortcut') {
+          setSnack(`${t('metadataRunCancelled')}${releasedNote}`);
+        }
+        return;
+      }
       
       // Final check and update for any remaining files
       for (const filePath of Array.from(stillProcessing)) {
@@ -7846,11 +8038,31 @@ const add = async () => {
       const releasedNote = releasedCount > 0 ? ` ${t('metadataCreditsReleased', { count: releasedCount })}` : '';
       setSnack(`${t('metadataGenerationError')}${releasedNote}`);
     } finally {
-      setMetadataGenerationBusyPaths((prev) => {
-        const next = new Set(prev);
-        paths.forEach((p) => next.delete(p));
-        return next;
-      });
+      removeMetadataBusyPaths(paths);
+      if (metadataActiveRef.current?.id === job.id) {
+        metadataActiveRef.current = null;
+        metadataCancelRef.current = null;
+      }
+      refreshMetadataQueueCounts();
+
+      let nextJob: MetadataQueueItem | undefined;
+      while (!metadataActiveRef.current && metadataQueueRef.current.length > 0) {
+        nextJob = metadataQueueRef.current.shift();
+        refreshMetadataQueueCounts();
+        if (!nextJob) break;
+        const allowBusy = new Set(nextJob.filePaths);
+        const nextRows = rowsRef.current.filter((r) => allowBusy.has(r.filePath));
+        if (nextRows.length === 0) {
+          removeMetadataBusyPaths(nextJob.filePaths);
+          continue;
+        }
+        void generateMetadata(nextRows, nextJob.platforms, {
+          skipQueue: true,
+          allowBusyPaths: allowBusy,
+          jobId: nextJob.id,
+        });
+        break;
+      }
     }
   };
 
@@ -8641,7 +8853,10 @@ const add = async () => {
             }}
             disablePlanAndPublish={!planAccess.isActive}
             youtubeConnected={ytConnected}
-            queueCount={Array.from(rowsById.values()).filter(r => r.status === 'Processing').length}
+            metadataQueueCounts={metadataQueueCounts}
+            onStopCurrentMetadata={handleStopCurrentMetadata}
+            onCancelQueuedMetadata={handleCancelQueuedMetadata}
+            onStopAllMetadata={() => void stopAllMetadataJobs('user')}
             onInterfaceClick={() => setInterfaceDialogOpen(true)}
             onAccountClick={() => setAccountDialogOpen(true)}
             onCustomAIClick={() => setCustomAIDialogOpen(true)}
@@ -12466,7 +12681,10 @@ const add = async () => {
             }}
             disablePlanAndPublish={!planAccess.isActive}
             youtubeConnected={ytConnected}
-            queueCount={Array.from(rowsById.values()).filter(r => r.status === 'Processing').length}
+            metadataQueueCounts={metadataQueueCounts}
+            onStopCurrentMetadata={handleStopCurrentMetadata}
+            onCancelQueuedMetadata={handleCancelQueuedMetadata}
+            onStopAllMetadata={() => void stopAllMetadataJobs('user')}
             onInterfaceClick={() => setInterfaceDialogOpen(true)}
             onAccountClick={() => setAccountDialogOpen(true)}
             onCustomAIClick={() => setCustomAIDialogOpen(true)}

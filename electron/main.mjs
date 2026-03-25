@@ -105,6 +105,9 @@ let pendingDeepLinkUrl = null;
 let supabaseAccessToken = '';
 let supabaseFunctionsUrlOverride = '';
 let updateNextPromptTimer = null;
+let loggedHfSymlinkWarning = false;
+
+const activePipelineRuns = new Map();
 
 function decodeJwtPayload(token) {
   if (typeof token !== 'string') return null;
@@ -285,10 +288,25 @@ function getBundledPythonPath() {
 }
 
 function getBundledFfmpegPaths() {
+  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const probeExe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+  const envFfmpeg = process.env.FFMPEG_PATH || '';
+  const envFfprobe = process.env.FFPROBE_PATH || '';
+  if (envFfmpeg || envFfprobe) {
+    return { ffmpeg: envFfmpeg || '', ffprobe: envFfprobe || '' };
+  }
+  if (!app.isPackaged) {
+    const devBase = path.join(APP_ROOT, 'vendor', 'bin');
+    return {
+      ffmpeg: path.join(devBase, exe),
+      ffprobe: path.join(devBase, probeExe),
+    };
+  }
   const base = process.resourcesPath;
-  const ffmpeg = path.join(base, 'bin', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
-  const ffprobe = path.join(base, 'bin', process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe');
-  return { ffmpeg, ffprobe };
+  return {
+    ffmpeg: path.join(base, 'bin', exe),
+    ffprobe: path.join(base, 'bin', probeExe),
+  };
 }
 
 /**
@@ -346,6 +364,128 @@ function spawnPipelineProcess(params) {
   });
 
   return child;
+}
+
+async function killProcessTree(pid, reason = 'manual') {
+  if (!pid || Number.isNaN(Number(pid))) return false;
+  const targetPid = Number(pid);
+  if (process.platform === 'win32') {
+    return await new Promise((resolve) => {
+      try {
+        const killer = spawn('taskkill', ['/PID', String(targetPid), '/T', '/F'], {
+          windowsHide: true,
+          shell: false,
+        });
+        killer.on('close', () => resolve(true));
+        killer.on('error', () => resolve(false));
+      } catch {
+        resolve(false);
+      }
+    });
+  }
+
+  try {
+    process.kill(targetPid, 'SIGTERM');
+  } catch {
+    // ignore
+  }
+  setTimeout(() => {
+    try {
+      process.kill(targetPid, 'SIGKILL');
+    } catch {
+      // ignore
+    }
+  }, 1500);
+  return true;
+}
+
+function registerPipelineRun(runId, child, options = {}) {
+  if (!runId || !child || !child.pid) return;
+  activePipelineRuns.set(runId, {
+    runId,
+    child,
+    pid: child.pid,
+    startedAt: Date.now(),
+    canceled: false,
+    cancelReason: null,
+    logLine: typeof options.logLine === 'function' ? options.logLine : null,
+  });
+}
+
+function markPipelineCanceled(runId, reason = 'manual') {
+  const entry = activePipelineRuns.get(runId);
+  if (!entry) return null;
+  entry.canceled = true;
+  entry.cancelReason = reason;
+  return entry;
+}
+
+function finalizePipelineRun(runId) {
+  activePipelineRuns.delete(runId);
+}
+
+async function cancelPipelineRun(runId, reason = 'manual') {
+  const entry = markPipelineCanceled(runId, reason);
+  if (!entry) return { ok: true, canceled: false };
+  try {
+    if (entry.logLine) {
+      entry.logLine(formatTechLog('WARN', 'pipeline', 'Run cancelled', { runId, reason }));
+    }
+  } catch {
+    // ignore
+  }
+  await killProcessTree(entry.pid, reason);
+  return { ok: true, canceled: true };
+}
+
+async function cancelAllPipelineRuns(reason = 'manual') {
+  const runs = Array.from(activePipelineRuns.values());
+  if (runs.length === 0) return { ok: true, canceled: false, count: 0 };
+  await Promise.all(runs.map((entry) => cancelPipelineRun(entry.runId, reason)));
+  return { ok: true, canceled: true, count: runs.length };
+}
+
+function isFfmpegInfoLine(line) {
+  const text = line.toLowerCase();
+  if (text.startsWith('ffmpeg version') || text.startsWith('ffprobe version')) return true;
+  if (text.startsWith('configuration:') || text.startsWith('built with')) return true;
+  if (text.startsWith('input #') || text.startsWith('output #')) return true;
+  if (text.startsWith('stream #') || text.startsWith('stream mapping')) return true;
+  if (text.startsWith('metadata:') || text.startsWith('duration:') || text.startsWith('bitrate:')) return true;
+  if (text.startsWith('libswscale') || text.startsWith('libswresample')) return true;
+  if (text.startsWith('major_brand') || text.startsWith('minor_version')) return true;
+  if (text.startsWith('compatible_brands') || text.startsWith('creation_time')) return true;
+  if (text.startsWith('handler_name') || text.startsWith('vendor_id')) return true;
+  if (text.startsWith('encoder') || text.startsWith('tsse')) return true;
+  if (text.startsWith('bitrate') || text.startsWith('maxrate') || text.startsWith('te_is_reencode')) return true;
+  if (text.includes(' tbr') && text.includes(' tbn')) return true;
+  if (text.startsWith('frame=') || text.startsWith('size=') || text.startsWith('time=') || text.startsWith('speed=')) return true;
+  if (text.includes('press [q]')) return true;
+  if (text.startsWith('libav')) return true;
+  return false;
+}
+
+function isHfSymlinkWarning(line) {
+  const text = line.toLowerCase();
+  return text.includes('symlink')
+    && (text.includes('huggingface') || text.includes('huggingface_hub') || text.includes('hf hub') || text.includes('hf_hub'));
+}
+
+function classifyPipelineStderrLine(line) {
+  const trimmed = line.replace(/\r/g, '').trim();
+  if (!trimmed) return null;
+  if (isHfSymlinkWarning(trimmed)) {
+    if (loggedHfSymlinkWarning) return null;
+    loggedHfSymlinkWarning = true;
+    return {
+      level: 'INFO',
+      line: 'HuggingFace cache symlinks are not supported on this system; using file copies instead.',
+    };
+  }
+  if (isFfmpegInfoLine(trimmed)) {
+    return { level: 'INFO', line: trimmed };
+  }
+  return { level: 'WARN', line: trimmed };
 }
 
 // Default outputs base (same as previous hardcoded behavior)
@@ -2478,6 +2618,8 @@ async function ensureCriticalResourcesPresent() {
   }
 
   const { ffmpeg, ffprobe } = getBundledFfmpegPaths();
+  const ffmpegPath = ffmpeg && fs.existsSync(ffmpeg) ? ffmpeg : '';
+  const ffprobePath = ffprobe && fs.existsSync(ffprobe) ? ffprobe : '';
   if (!fs.existsSync(ffmpeg)) {
     problems.push('Internal ffmpeg executable (resources/bin/ffmpeg.exe) is missing.');
   }
@@ -3083,6 +3225,7 @@ function toggleAssistCenter() {
 }
 
 app.on('window-all-closed', (event) => {
+  void cancelAllPipelineRuns('window-closed');
   // On Windows/Linux, keep app running in system tray for scheduled jobs
   if (process.platform !== 'darwin') {
     event.preventDefault();
@@ -3378,6 +3521,8 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
   }
 
   const { ffmpeg, ffprobe } = getBundledFfmpegPaths();
+  const ffmpegPath = ffmpeg && fs.existsSync(ffmpeg) ? ffmpeg : '';
+  const ffprobePath = ffprobe && fs.existsSync(ffprobe) ? ffprobe : '';
 
   const scriptArgs = (mode === 'folder'
     ? ['--folder', paths[0] || '', '--variant', variant]
@@ -3396,8 +3541,8 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
     OUTPUTS_DIR: outputsDir,
     WHISPER_DEVICE: effectiveDevice,
     WHISPER_COMPUTE_TYPE: whisperComputeType,
-    ...(ffmpeg ? { FFMPEG_PATH: ffmpeg } : {}),
-    ...(ffprobe ? { FFPROBE_PATH: ffprobe } : {}),
+    ...(ffmpegPath ? { FFMPEG_PATH: ffmpegPath } : {}),
+    ...(ffprobePath ? { FFPROBE_PATH: ffprobePath } : {}),
   };
 
   const workingDir = path.dirname(script);
@@ -3425,11 +3570,14 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
       onStderr(s) {
         const lines = s.split(/\r?\n/);
         for (const line of lines) {
-          const trimmed = line.replace(/\r/g, '').trim();
-          if (trimmed) writeLine(formatTechLog('WARN', 'pipeline', trimmed, {}));
+          const classified = classifyPipelineStderrLine(line);
+          if (!classified) continue;
+          writeLine(formatTechLog(classified.level, 'pipeline', classified.line, {}));
         }
       },
     });
+
+    registerPipelineRun(runId, child, { logLine: writeLine });
 
     child.on('error', (err) => {
       const code = (err && err.code) || '';
@@ -3474,6 +3622,7 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
       } else if (isEnoent) {
         log('WARN', 'runner', 'Python not found; set PYTHON_PATH or developerOptions.pythonPath to full path', {});
       }
+      finalizePipelineRun(runId);
       resolve({ runId, code: 1, error: String(err) });
     });
 
@@ -3485,17 +3634,32 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
           emitFileDone(stdoutBuffer);
           stdoutBuffer = '';
         }
-        log('INFO', 'pipeline', 'Run finished', { code });
+        const entry = activePipelineRuns.get(runId);
+        if (entry?.canceled) {
+          log('WARN', 'pipeline', 'Run cancelled', { code, reason: entry.cancelReason || 'manual' });
+        } else {
+          log('INFO', 'pipeline', 'Run finished', { code });
+        }
+        finalizePipelineRun(runId);
 
         runCleanupOutputArtifactsIfEnabled({
           logLine: (line) => writeLine(formatTechLog('INFO', 'cleanup', line, {})),
         });
 
-        resolve({ runId, code });
+        resolve({ runId, code, canceled: Boolean(entry?.canceled) });
       };
       void finalize();
     });
   });
+});
+
+ipcMain.handle('pipeline:cancel', async (_event, payload) => {
+  const runId = typeof payload?.runId === 'string' ? payload.runId : '';
+  const reason = typeof payload?.reason === 'string' ? payload.reason : 'manual';
+  if (runId) {
+    return await cancelPipelineRun(runId, reason);
+  }
+  return await cancelAllPipelineRuns(reason);
 });
 
 // ---------- outputs reader (for Details) ----------
@@ -4411,4 +4575,5 @@ function stopBatchNotificationTimer() {
 // Clean up on app quit
 app.on('before-quit', () => {
   stopBatchNotificationTimer();
+  void cancelAllPipelineRuns('app-quit');
 });

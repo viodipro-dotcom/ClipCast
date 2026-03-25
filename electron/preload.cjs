@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
 
   // pipeline
   runPipeline: (payload) => ipcRenderer.invoke('pipeline:runPipeline', payload),
+  cancelPipeline: (payload) => ipcRenderer.invoke('pipeline:cancel', payload),
 
   // outputs / exports
   readOutputsForPath: (filePath) => ipcRenderer.invoke('outputs:readForPath', filePath),

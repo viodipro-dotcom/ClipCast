@@ -11,7 +11,10 @@ export interface CommandBarProps {
   onPublishClick: () => void;
   disablePlanAndPublish?: boolean;
   youtubeConnected: boolean;
-  queueCount: number;
+  metadataQueueCounts?: { running: number; queued: number };
+  onStopCurrentMetadata?: () => void;
+  onCancelQueuedMetadata?: () => void;
+  onStopAllMetadata?: () => void;
   onInterfaceClick?: () => void;
   onAccountClick?: () => void;
   onDiagnosticsClick: () => void;
@@ -31,7 +34,10 @@ export default function CommandBar({
   onPublishClick,
   disablePlanAndPublish = false,
   youtubeConnected,
-  queueCount,
+  metadataQueueCounts,
+  onStopCurrentMetadata,
+  onCancelQueuedMetadata,
+  onStopAllMetadata,
   onInterfaceClick,
   onAccountClick,
   onDiagnosticsClick,
@@ -48,6 +54,9 @@ export default function CommandBar({
   const menuOpen = Boolean(menuAnchorPosition);
   const [youtubeMenuAnchor, setYoutubeMenuAnchor] = React.useState<HTMLElement | null>(null);
   const youtubeMenuOpen = Boolean(youtubeMenuAnchor);
+  const [queueMenuAnchor, setQueueMenuAnchor] = React.useState<HTMLElement | null>(null);
+  const queueMenuOpen = Boolean(queueMenuAnchor);
+  const hasQueue = Boolean(metadataQueueCounts && (metadataQueueCounts.running > 0 || metadataQueueCounts.queued > 0));
 
   const handleMenuClick = (event: React.MouseEvent<HTMLElement>) => {
     // Anchor by click coordinates to avoid position drift when UI scale changes.
@@ -64,6 +73,14 @@ export default function CommandBar({
 
   const handleYoutubeMenuClose = () => {
     setYoutubeMenuAnchor(null);
+  };
+
+  const handleQueueMenuClick = (event: React.MouseEvent<HTMLElement>) => {
+    setQueueMenuAnchor(event.currentTarget);
+  };
+
+  const handleQueueMenuClose = () => {
+    setQueueMenuAnchor(null);
   };
 
   return (
@@ -195,13 +212,54 @@ export default function CommandBar({
             </MenuItem>
           )}
         </Menu>
-        {queueCount > 0 && (
-          <Chip
-            label={`${t('queue')}: ${queueCount} ${t('running')}`}
-            color="info"
-            size="small"
-            sx={{ fontWeight: 500 }}
-          />
+        {hasQueue && metadataQueueCounts && (
+          <>
+            <Chip
+              label={`${t('runningLabel')}: ${metadataQueueCounts.running} • ${t('queuedLabel')}: ${metadataQueueCounts.queued}`}
+              color="info"
+              size="small"
+              sx={{ fontWeight: 500, cursor: 'pointer' }}
+              onClick={handleQueueMenuClick}
+            />
+            <Menu
+              anchorEl={queueMenuAnchor}
+              open={queueMenuOpen}
+              onClose={handleQueueMenuClose}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            >
+              {metadataQueueCounts.running > 0 && onStopCurrentMetadata && (
+                <MenuItem
+                  onClick={() => {
+                    onStopCurrentMetadata();
+                    handleQueueMenuClose();
+                  }}
+                >
+                  ⏹️ {t('stopCurrent')}
+                </MenuItem>
+              )}
+              {metadataQueueCounts.queued > 0 && onCancelQueuedMetadata && (
+                <MenuItem
+                  onClick={() => {
+                    onCancelQueuedMetadata();
+                    handleQueueMenuClose();
+                  }}
+                >
+                  🚫 {t('cancelQueued')}
+                </MenuItem>
+              )}
+              {(metadataQueueCounts.running > 0 || metadataQueueCounts.queued > 0) && onStopAllMetadata && (
+                <MenuItem
+                  onClick={() => {
+                    onStopAllMetadata();
+                    handleQueueMenuClose();
+                  }}
+                >
+                  🛑 {t('stopAll')}
+                </MenuItem>
+              )}
+            </Menu>
+          </>
         )}
 
         <Tooltip title={t('settings')}>

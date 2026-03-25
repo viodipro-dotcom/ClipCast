@@ -36,7 +36,7 @@ const api: Api = {
   openFiles: () => ipcRenderer.invoke("dialog:openFiles"),
   openFolder: () => ipcRenderer.invoke("dialog:openFolder"),
   runPipeline: (payload) => ipcRenderer.invoke("pipeline:runPipeline", payload),
-  cancelPipeline: () => ipcRenderer.invoke("pipeline:cancel"),
+  cancelPipeline: (payload) => ipcRenderer.invoke("pipeline:cancel", payload),
   onPipelineLog: (cb) => {
     const h = (_: unknown, data: any) => cb(data);
     ipcRenderer.on("pipeline:log", h);

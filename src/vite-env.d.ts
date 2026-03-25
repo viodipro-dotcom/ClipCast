@@ -15,7 +15,7 @@ export type PipelinePayload = {
   auth?: { accessToken?: string; functionsUrl?: string };
 };
 
-export type PipelineRunResult = { runId: string; code: number };
+export type PipelineRunResult = { runId: string; code?: number; canceled?: boolean; error?: string };
 
 export type PipelineLogMsg = { runId: string; line: string };
 export type PipelineFileDoneMsg = {
@@ -66,6 +66,7 @@ declare global {
       openFolder: () => Promise<string>;
 
       runPipeline: (payload: PipelinePayload & { platforms?: ('youtube' | 'instagram' | 'tiktok')[] }) => Promise<PipelineRunResult>;
+      cancelPipeline: (payload?: { runId?: string; reason?: string }) => Promise<{ ok: boolean; canceled?: boolean; count?: number; error?: string }>;
       onPipelineLog: (cb: (msg: PipelineLogMsg) => void) => () => void;
       onPipelineFileDone: (cb: (msg: PipelineFileDoneMsg) => void) => () => void;
 

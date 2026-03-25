@@ -47,6 +47,19 @@ export interface AccountDialogProps {
 
 const DEEP_LINK_CALLBACK = 'clipcast://auth/callback';
 
+function ensureDeepLinkRedirect(authUrl: string, redirectTo: string): string {
+  try {
+    const url = new URL(authUrl);
+    const current = url.searchParams.get('redirect_to');
+    if (current !== redirectTo) {
+      url.searchParams.set('redirect_to', redirectTo);
+    }
+    return url.toString();
+  } catch {
+    return authUrl;
+  }
+}
+
 declare global {
   interface Window {
     clipcast?: {
@@ -205,7 +218,8 @@ export default function AccountDialog({
       }
       if (data?.url) {
         if (openExternal) {
-          const result = await openExternal(data.url);
+          const authUrl = ensureDeepLinkRedirect(data.url, DEEP_LINK_CALLBACK);
+          const result = await openExternal(authUrl);
           if (result?.ok !== true && result?.error) {
             onSnack(result.error ?? t('signInError', { message: 'Failed to open browser' }));
             return;
@@ -214,6 +228,8 @@ export default function AccountDialog({
         } else {
           onSnack(t('signInNotConfigured'));
         }
+      } else {
+        onSnack(t('signInError', { message: 'Missing OAuth URL' }));
       }
     } catch (err) {
       if (isNetworkError(err)) {
