@@ -238,6 +238,7 @@ export async function exportDiagnosticsBundle(ctx) {
           availableGpu: compute.availableGpu,
           error: compute.error ?? null,
           pythonPath: compute.pythonPath ?? null,
+          details: compute.details ?? null,
         }
       : null,
   });

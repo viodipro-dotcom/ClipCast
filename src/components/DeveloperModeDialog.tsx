@@ -63,6 +63,35 @@ export default function DeveloperModeDialog({
       gpu_count?: number;
       gpu_name?: string | null;
       vram_total_mb?: number;
+      adapters?: Array<{
+        name?: string | null;
+        vendor?: string | null;
+        vram_mb?: number;
+        pnp_device_id?: string | null;
+        driver_version?: string | null;
+        is_nvidia?: boolean;
+      }>;
+      nvidia_present?: boolean;
+      nvidia_gpus?: Array<{
+        name?: string | null;
+        vram_total_mb?: number;
+        driver_version?: string | null;
+        compute_capability?: string | null;
+      }>;
+      cuda_smoke?: {
+        ok?: boolean;
+        error?: string | null;
+        reason?: string | null;
+        python?: string | null;
+        platform?: string | null;
+        ctranslate2_version?: string | null;
+        cuda_device_count?: number;
+        supported_compute_types?: string[];
+        elapsed_ms?: number;
+      } | null;
+      cuda_smoke_raw_error?: string | null;
+      python_source?: string | null;
+      python_exec?: string | null;
       error?: string | null;
     };
     error?: string | null;
@@ -331,21 +360,89 @@ export default function DeveloperModeDialog({
     return gpuAvailable ? 'gpu' : 'cpu';
   })();
 
-  const computeStatusLine = (() => {
-    if (!computeBackendInfo) {
-      return t('computeBackendStatusUnknown');
-    }
-    const label = computeBackendInfo.availableGpu ? 'GPU' : 'CPU';
-    const name = computeBackendInfo.details?.gpu_name || '';
-    if (computeBackendInfo.availableGpu && name) {
-      return t('computeBackendStatusWithName', { label, name });
-    }
-    return t('computeBackendStatus', { label });
+  const computeModeLabel = computeBackendPreference === 'auto'
+    ? 'Auto'
+    : computeBackendPreference === 'prefer_gpu'
+      ? 'Prefer GPU'
+      : 'Force CPU';
+
+  const hasComputeInfo = Boolean(computeBackendInfo);
+  const selectedDeviceLabel = !hasComputeInfo ? 'Unknown' : effectiveBackend === 'gpu' ? 'CUDA' : 'CPU';
+  const nvidiaPresent = computeBackendInfo?.details?.nvidia_present;
+  const nvidiaLabel = !hasComputeInfo
+    ? 'Not checked yet'
+    : typeof nvidiaPresent === 'boolean'
+      ? (nvidiaPresent ? 'yes' : 'no')
+      : 'Unknown';
+
+  const smoke = computeBackendInfo?.details?.cuda_smoke;
+  const rawSmokeError = computeBackendInfo?.details?.cuda_smoke_raw_error || '';
+  const hasSmokeFailure = Boolean((smoke && smoke.ok === false) || rawSmokeError);
+  const smokeStatus = (() => {
+    if (computeBackendPreference === 'force_cpu') return 'skipped';
+    if (!hasComputeInfo) return 'Not checked yet';
+    if (nvidiaPresent === false) return 'skipped';
+    if (smoke?.ok === true) return 'passed';
+    if (hasSmokeFailure) return 'failed';
+    return 'Not checked yet';
   })();
 
-  const computeWillUseLine = !computeBackendInfo
-    ? t('computeBackendWillUseUnknown')
-    : t('computeBackendWillUse', { label: effectiveBackend === 'gpu' ? 'GPU' : 'CPU' });
+  const formatFallbackReason = (reason: string): string => {
+    const key = String(reason || '').toLowerCase();
+    const map: Record<string, string> = {
+      missing_cudnn: 'missing cuDNN DLL',
+      missing_cublas: 'missing cuBLAS DLL',
+      missing_cudart: 'missing CUDA runtime DLL',
+      missing_dll: 'missing CUDA DLL',
+      no_cuda_device: 'no CUDA device',
+      cuda_no_float16: 'float16 not supported',
+      cuda_unavailable: 'CUDA unavailable',
+      cuda_probe_failed: 'CUDA probe failed',
+    };
+    if (key.includes('libiomp5md.dll') || key.includes('omp: error #15')) {
+      return 'OpenMP runtime conflict (libiomp5md.dll)';
+    }
+    return map[key] || reason;
+  };
+
+  const fallbackReasonRaw = computeBackendInfo?.details?.cuda_smoke?.reason
+    || rawSmokeError
+    || computeBackendInfo?.error
+    || '';
+  const fallbackReason =
+    computeBackendPreference !== 'force_cpu'
+      && selectedDeviceLabel === 'CPU'
+      && hasComputeInfo
+      ? formatFallbackReason(fallbackReasonRaw)
+      : '';
+
+  const pythonSource = computeBackendInfo?.details?.python_source || '';
+  const pythonSourceLabel = pythonSource === 'custom'
+    ? 'Custom Python / Conda env'
+    : pythonSource === 'bundled'
+      ? 'Bundled runtime'
+      : pythonSource === 'none'
+        ? 'Not configured'
+        : (pythonPath ? 'Custom Python / Conda env' : 'System Python');
+  const showCustomEnvWarning = Boolean(
+    pythonSource === 'custom'
+      && selectedDeviceLabel === 'CPU'
+      && computeBackendPreference !== 'force_cpu'
+      && smokeStatus === 'failed'
+  );
+  const effectivePythonPath = computeBackendInfo?.details?.python_exec || computeBackendInfo?.pythonPath || '';
+
+  const adapterSummary = React.useMemo(() => {
+    const adapters = computeBackendInfo?.details?.adapters;
+    const nvidia = computeBackendInfo?.details?.nvidia_gpus;
+    const names = Array.isArray(adapters) && adapters.length > 0
+      ? adapters.map((a) => a?.name).filter(Boolean)
+      : (Array.isArray(nvidia) ? nvidia.map((g) => g?.name).filter(Boolean) : []);
+    if (!hasComputeInfo) return 'Not checked yet';
+    if (!names.length) return 'None detected';
+    const joined = names.join(', ');
+    return joined.length > 120 ? `${joined.slice(0, 119)}…` : joined;
+  }, [computeBackendInfo, hasComputeInfo]);
 
   return (
     <>
@@ -520,10 +617,32 @@ export default function DeveloperModeDialog({
                 {t('computeBackendHelper')}
               </Typography>
               <Typography variant="body2" sx={{ mt: 0.5 }}>
-                {computeStatusLine}
+                {`Compute mode: ${computeModeLabel}`}
               </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                {computeWillUseLine}
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {`Selected device: ${selectedDeviceLabel}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {`Python source: ${pythonSourceLabel}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {`NVIDIA present: ${nvidiaLabel}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {`CUDA smoke test: ${smokeStatus}`}
+              </Typography>
+              {fallbackReason && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {`Fallback reason: ${fallbackReason}`}
+                </Typography>
+              )}
+              {showCustomEnvWarning && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  GPU not available in the selected Python / Conda environment. Falling back to CPU.
+                </Typography>
+              )}
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                {`Adapters found: ${adapterSummary}`}
               </Typography>
               <RadioGroup
                 row
@@ -558,9 +677,9 @@ export default function DeveloperModeDialog({
                 >
                   {t('computeBackendRefresh')}
                 </Button>
-                {computeBackendInfo?.pythonPath && (
+                {effectivePythonPath && (
                   <Typography variant="caption" color="text.secondary">
-                    {t('computeBackendPython', { path: computeBackendInfo.pythonPath })}
+                    {t('computeBackendPython', { path: effectivePythonPath })}
                   </Typography>
                 )}
                 {computeBackendInfo && !gpuAvailable && (

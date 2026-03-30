@@ -162,12 +162,50 @@ function buildRedactedFileMeta() {
   return { migratedToKeytar: true, redacted: true, redactedAt: new Date().toISOString() };
 }
 
+function extractLegacyGoogleOAuthClient(data) {
+  if (!data || typeof data !== 'object') return null;
+  const clientId = data?.clientId || data?.installed?.client_id || '';
+  const clientSecret = data?.clientSecret || data?.installed?.client_secret || '';
+  if (!clientId) return null;
+  return { clientId, ...(clientSecret ? { clientSecret } : {}) };
+}
+
+async function migrateLegacyGoogleOAuthClient({ log } = {}) {
+  const logger = typeof log === 'function' ? log : console.log;
+  const userDataDir = app.getPath('userData');
+  const googleClientPath = path.join(userDataDir, 'google_oauth_client.json');
+  if (!fs.existsSync(googleClientPath)) return null;
+
+  const data = safeReadJson(googleClientPath, null);
+  const parsed = extractLegacyGoogleOAuthClient(data);
+  if (!parsed) return null;
+
+  const existing = await getGoogleOAuthClient();
+  if (!existing) {
+    try {
+      await setGoogleOAuthClient(parsed.clientId, parsed.clientSecret);
+    } catch {
+      return parsed;
+    }
+  }
+
+  if (!data?.migratedToKeytar) {
+    const redacted = {
+      clientId: parsed.clientId || REDACTED_VALUE,
+      ...buildRedactedFileMeta(),
+    };
+    safeWriteJson(googleClientPath, redacted);
+    logger('[secrets] migrated google_oauth_client.json -> keytar');
+  }
+
+  return existing || parsed;
+}
+
 export async function migrateLegacySecrets({ log } = {}) {
   const logger = typeof log === 'function' ? log : console.log;
   const userDataDir = app.getPath('userData');
   const openAiPath = path.join(userDataDir, 'openai_config.json');
   const youtubeTokensPath = path.join(userDataDir, 'youtube_tokens.json');
-  const googleClientPath = path.join(userDataDir, 'google_oauth_client.json');
 
   if (fs.existsSync(openAiPath)) {
     const data = safeReadJson(openAiPath, null);
@@ -189,24 +227,15 @@ export async function migrateLegacySecrets({ log } = {}) {
     }
   }
 
-  if (fs.existsSync(googleClientPath)) {
-    const data = safeReadJson(googleClientPath, null);
-    if (!data?.migratedToKeytar) {
-      const existing = await getGoogleOAuthClient();
-      const clientId = data?.clientId || data?.installed?.client_id || '';
-      const clientSecret = data?.clientSecret || data?.installed?.client_secret || '';
-      if (!existing && clientId) {
-        await setGoogleOAuthClient(clientId, clientSecret || undefined);
-      }
-      const redacted = {
-        clientId: clientId || '',
-        ...(clientId ? {} : { clientId: REDACTED_VALUE }),
-        ...buildRedactedFileMeta(),
-      };
-      safeWriteJson(googleClientPath, redacted);
-      logger('[secrets] migrated google_oauth_client.json -> keytar');
-    }
-  }
+  await migrateLegacyGoogleOAuthClient({ log });
+}
+
+export async function getGoogleOAuthClientWithFallback({ log } = {}) {
+  const existing = await getGoogleOAuthClient();
+  if (existing) return { ...existing, source: 'keytar' };
+  const legacy = await migrateLegacyGoogleOAuthClient({ log });
+  if (legacy) return { ...legacy, source: 'legacy' };
+  return null;
 }
 
 export const SECRET_ACCOUNTS = {

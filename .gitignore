@@ -118,3 +118,10 @@ TODO_PERSONAL.md
 __pycache__/
 **/__pycache__/
 *.pyc
+
+.venv_clipcast/
+release/
+dist/
+build/
+vendor/cuda/*.dll
+!vendor/cuda/README.txt

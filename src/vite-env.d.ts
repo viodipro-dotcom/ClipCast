@@ -197,6 +197,44 @@ declare global {
           gpu_count?: number;
           gpu_name?: string | null;
           vram_total_mb?: number;
+          adapters?: Array<{
+            name?: string | null;
+            vendor?: string | null;
+            vram_mb?: number;
+            pnp_device_id?: string | null;
+            driver_version?: string | null;
+            is_nvidia?: boolean;
+          }>;
+          nvidia_present?: boolean;
+          nvidia_gpus?: Array<{
+            name?: string | null;
+            vram_total_mb?: number;
+            driver_version?: string | null;
+            compute_capability?: string | null;
+          }>;
+          cuda_smoke?: {
+            ok?: boolean;
+            error?: string | null;
+            reason?: string | null;
+            python?: string | null;
+            platform?: string | null;
+            ctranslate2_version?: string | null;
+            cuda_device_count?: number;
+            supported_compute_types?: string[];
+            elapsed_ms?: number;
+            inference_test?: string;
+            inference_error?: string | null;
+            inference_model?: string | null;
+            dll_check?: {
+              status?: string;
+              missing?: string[];
+              required?: string[];
+              optional_missing?: string[];
+            };
+          } | null;
+          cuda_smoke_raw_error?: string | null;
+          python_source?: string | null;
+          python_exec?: string | null;
           error?: string | null;
         };
         error?: string | null;
@@ -214,6 +252,44 @@ declare global {
           gpu_count?: number;
           gpu_name?: string | null;
           vram_total_mb?: number;
+          adapters?: Array<{
+            name?: string | null;
+            vendor?: string | null;
+            vram_mb?: number;
+            pnp_device_id?: string | null;
+            driver_version?: string | null;
+            is_nvidia?: boolean;
+          }>;
+          nvidia_present?: boolean;
+          nvidia_gpus?: Array<{
+            name?: string | null;
+            vram_total_mb?: number;
+            driver_version?: string | null;
+            compute_capability?: string | null;
+          }>;
+          cuda_smoke?: {
+            ok?: boolean;
+            error?: string | null;
+            reason?: string | null;
+            python?: string | null;
+            platform?: string | null;
+            ctranslate2_version?: string | null;
+            cuda_device_count?: number;
+            supported_compute_types?: string[];
+            elapsed_ms?: number;
+            inference_test?: string;
+            inference_error?: string | null;
+            inference_model?: string | null;
+            dll_check?: {
+              status?: string;
+              missing?: string[];
+              required?: string[];
+              optional_missing?: string[];
+            };
+          } | null;
+          cuda_smoke_raw_error?: string | null;
+          python_source?: string | null;
+          python_exec?: string | null;
           error?: string | null;
         };
         error?: string | null;

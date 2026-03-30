@@ -89,6 +89,8 @@ export default function CommandBar({
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
+        position: 'relative',
+        zIndex: 2,
         py: 1.5,
         px: 2,
         borderBottom: '1px solid',
@@ -262,7 +264,24 @@ export default function CommandBar({
           </>
         )}
 
-        <Tooltip title={t('settings')}>
+        <Tooltip
+          title={t('settings')}
+          placement="bottom-end"
+          PopperProps={{
+            // Keep the tooltip inside the app layout to avoid body scroll width changes.
+            disablePortal: true,
+            // Fixed positioning avoids layout scrollWidth expansion when near viewport edge.
+            strategy: 'fixed',
+            modifiers: [
+              { name: 'offset', options: { offset: [0, 8] } },
+              {
+                name: 'preventOverflow',
+                options: { boundary: 'viewport', rootBoundary: 'viewport', padding: 8 },
+              },
+              { name: 'flip', options: { padding: 8 } },
+            ],
+          }}
+        >
           <IconButton
             size="small"
             onClick={handleMenuClick}

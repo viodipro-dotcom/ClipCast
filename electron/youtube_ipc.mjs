@@ -88,7 +88,12 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         const userDataPath = app.getPath('userData');
         const credsPath = path.join(userDataPath, 'google_oauth_client.json');
         const fileExists = fs.existsSync(credsPath);
-        const sourceLabel = creds?.source === 'env' ? 'environment variables' : 'OS keychain';
+        const sourceLabel =
+          creds?.source === 'env'
+            ? 'environment variables'
+            : creds?.source === 'legacy'
+              ? 'legacy file (migrated to OS keychain)'
+              : 'OS keychain';
         
         return {
           ok: true,
@@ -106,15 +111,19 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         const credsPath = path.join(userDataPath, 'google_oauth_client.json');
         const fileExists = fs.existsSync(credsPath);
         
+        const errorMessage = redactSecrets(String(e?.message || e));
+        const missingMessage =
+          'Google OAuth client is not configured on this device. Open Settings > Developer mode to add credentials.';
+
         return {
           ok: false,
           hasCredentials: false,
-          error: redactSecrets(String(e?.message || e)),
+          error: errorMessage,
           filePath: credsPath,
           fileExists,
           message: fileExists
-            ? `File exists but credentials invalid: ${redactSecrets(String(e?.message || e))}`
-            : `Credentials file not found at ${credsPath}`,
+            ? `Credentials found but invalid: ${errorMessage}`
+            : errorMessage || missingMessage,
         };
       }
     });

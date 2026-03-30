@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { google } from 'googleapis';
-import { getGoogleOAuthClient, getYouTubeTokens, redactSecrets, setYouTubeTokens } from './secrets.mjs';
+import { getGoogleOAuthClientWithFallback, getYouTubeTokens, redactSecrets, setYouTubeTokens } from './secrets.mjs';
 
 const { app, shell } = electron;
 
@@ -69,7 +69,7 @@ export async function loadClientCredentials() {
   }
 
   // TODO: migrate to PKCE installed-app flow to drop clientSecret requirement.
-  const stored = await getGoogleOAuthClient();
+  const stored = await getGoogleOAuthClientWithFallback();
   const clientId = stored?.clientId || '';
   const clientSecret = stored?.clientSecret || '';
   if (clientId && clientSecret) {
@@ -79,14 +79,14 @@ export async function loadClientCredentials() {
         `Invalid Client ID format. Expected format: numbers-letters.apps.googleusercontent.com. Got: ${clientId.slice(0, 50)}...`,
       );
     }
-    return { clientId, clientSecret, source: 'keytar' };
+    return { clientId, clientSecret, source: stored?.source || 'keytar' };
   }
   if (clientId && !clientSecret) {
     throw new Error('Missing Google OAuth client secret. Re-enter credentials in app settings.');
   }
 
   throw new Error(
-    'Missing Google OAuth credentials. Set env GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET or add them in app settings (stored in OS keychain).',
+    'Google OAuth client is not configured on this device. Open Settings to add credentials or set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET.',
   );
 }
 
@@ -117,7 +117,7 @@ async function withLocalCallbackServer(onReady) {
         if (err) {
           let errorMsg = `OAuth error: ${err}`;
           if (err === 'invalid_client' || err === 'access_denied') {
-            errorMsg = `OAuth error: ${err}. ${errorDescription || 'Invalid or missing OAuth credentials. Check your clientId and clientSecret in google_oauth_client.json'}`;
+            errorMsg = `OAuth error: ${err}. ${errorDescription || 'Invalid or missing OAuth credentials. Configure the Google OAuth client in Settings.'}`;
           }
           res.writeHead(400, { 'content-type': 'text/plain' });
           res.end(errorMsg);

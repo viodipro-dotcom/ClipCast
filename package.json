@@ -9,8 +9,9 @@
     "build": "vite build",
     "clean:outputs": "node scripts/clean-outputs.mjs",
     "build:icon": "node scripts/build-icon.mjs",
-    "dist": "npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish never",
-    "release": "npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish always",
+    "prepare:cuda-dlls": "node scripts/prepare-cuda-dlls.mjs",
+    "dist": "npm run prepare:cuda-dlls && npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish never",
+    "release": "npm run prepare:cuda-dlls && npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish always",
     "preview": "vite preview",
     "test": "tsx test-utils.ts",
     "e2e": "playwright test",
@@ -94,6 +95,13 @@
         "to": "bin",
         "filter": [
           "**/*"
+        ]
+      },
+      {
+        "from": "vendor/cuda",
+        "to": "python/Library/bin",
+        "filter": [
+          "**/*.dll"
         ]
       },
       {

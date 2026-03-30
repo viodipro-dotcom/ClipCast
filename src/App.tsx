@@ -8868,12 +8868,8 @@ const add = async () => {
               if (validation?.ok) {
                 setSnack(t('credentialsOk', { clientId: validation.clientIdPrefix, file: validation.filePath }));
               } else {
-                setSnack(
-                  t('credentialsNotFoundWithMessage', {
-                    message: validation?.message || t('credentialsNotFound'),
-                    file: validation?.filePath || t('unknownValue'),
-                  }),
-                );
+                const message = validation?.message || t('credentialsNotFound');
+                setSnack(t('credentialsValidationFailedWithMessage', { message }));
               }
             } catch (e) {
               console.error(e);
@@ -9879,12 +9875,8 @@ const add = async () => {
                       if (validation?.ok) {
                         setSnack(t('credentialsOk', { clientId: validation.clientIdPrefix, file: validation.filePath }));
                       } else {
-                        setSnack(
-                          t('credentialsNotFoundWithMessage', {
-                            message: validation?.message || t('credentialsNotFound'),
-                            file: validation?.filePath || t('unknownValue'),
-                          }),
-                        );
+                        const message = validation?.message || t('credentialsNotFound');
+                        setSnack(t('credentialsValidationFailedWithMessage', { message }));
                       }
                     } catch (e) {
                       console.error(e);
@@ -12696,12 +12688,8 @@ const add = async () => {
                 if (validation?.ok) {
                   setSnack(t('credentialsOk', { clientId: validation.clientIdPrefix, file: validation.filePath }));
                 } else {
-                  setSnack(
-                    t('credentialsNotFoundWithMessage', {
-                      message: validation?.message || t('credentialsNotFound'),
-                      file: validation?.filePath || t('unknownValue'),
-                    }),
-                  );
+                  const message = validation?.message || t('credentialsNotFound');
+                  setSnack(t('credentialsValidationFailedWithMessage', { message }));
                 }
               } catch (e) {
                 console.error(e);

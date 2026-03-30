@@ -648,35 +648,207 @@ function getPipelinePythonPath() {
     return opts.pythonPath;
   }
 
-  let python = process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)
-    ? process.env.PYTHON_PATH
-    : '';
-
-  if (!python) {
-    const candidates = [
-      path.join(process.env.USERPROFILE || '', 'miniconda3', 'envs', 'yt-gpu', 'python.exe'),
-      path.join(process.env.USERPROFILE || '', 'anaconda3', 'envs', 'yt-gpu', 'python.exe'),
-      path.join(process.env.CONDA_PREFIX || '', 'python.exe'),
-    ];
-    for (const candidate of candidates) {
-      if (candidate && fs.existsSync(candidate)) {
-        python = candidate;
-        break;
-      }
-    }
+  if (process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH)) {
+    return process.env.PYTHON_PATH;
   }
 
-  if (!python) {
-    python = 'python';
-  }
-
-  return python;
+  return '';
 }
 
-async function detectComputeBackend() {
+function isBundledPythonExe(pythonExe) {
+  if (!app.isPackaged || !pythonExe) return false;
+  try {
+    const res = path.normalize(process.resourcesPath || '').toLowerCase();
+    const exe = path.normalize(pythonExe).toLowerCase();
+    if (!res) return false;
+    if (!exe.startsWith(res)) return false;
+    return exe.includes(`${path.sep}python${path.sep}`.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+function buildBundledPythonEnv(baseEnv, pythonExe) {
+  const env = { ...baseEnv };
+  env.CLIPCAST_PY_ENV = 'bundled';
+  const removeKeys = [
+    'PYTHONHOME',
+    'PYTHONPATH',
+    'PYTHONUSERBASE',
+    'PYTHONNOUSERSITE',
+    'CONDA_PREFIX',
+    'CONDA_DEFAULT_ENV',
+    'CONDA_PROMPT_MODIFIER',
+    'CONDA_SHLVL',
+    'CONDA_EXE',
+    '_CONDA_EXE',
+    'CONDA_PYTHON_EXE',
+    'VIRTUAL_ENV',
+    'PIP_PREFIX',
+    'PIP_REQUIRE_VIRTUALENV',
+  ];
+  for (const key of removeKeys) {
+    if (key in env) delete env[key];
+  }
+  const pythonDir = pythonExe ? path.dirname(pythonExe) : '';
+  const pythonRoot = pythonDir && pythonDir.toLowerCase().endsWith(`${path.sep}scripts`)
+    ? path.dirname(pythonDir)
+    : pythonDir;
+  const extraDirs = [
+    pythonDir,
+    pythonRoot,
+    path.join(pythonRoot, 'Library', 'bin'),
+    path.join(pythonRoot, 'DLLs'),
+    path.join(pythonRoot, 'bin'),
+  ].filter((p) => p && fs.existsSync(p));
+  const pathEntries = String(env.PATH || '').split(path.delimiter).filter(Boolean);
+  const filtered = pathEntries.filter((p) => !/(^|\\|\/)(miniconda|anaconda|conda|envs)(\\|\/|$)/i.test(p));
+  const systemDirs = [];
+  if (process.platform === 'win32') {
+    const systemRoot = process.env.SystemRoot || process.env.WINDIR || 'C:\\Windows';
+    systemDirs.push(
+      systemRoot,
+      path.join(systemRoot, 'System32'),
+      path.join(systemRoot, 'System32', 'Wbem'),
+      path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0')
+    );
+  }
+  env.PATH = [...extraDirs, ...systemDirs, ...filtered].filter(Boolean).join(path.delimiter);
+  return env;
+}
+
+function buildPythonEnv(pythonExe, extraEnv = {}) {
+  const base = { ...process.env, ...extraEnv };
+  if (isBundledPythonExe(pythonExe)) {
+    return buildBundledPythonEnv(base, pythonExe);
+  }
+  return buildCustomPythonEnv(base, pythonExe);
+}
+
+function buildCustomPythonEnv(baseEnv, pythonExe) {
+  const env = { ...baseEnv };
+  env.CLIPCAST_PY_ENV = 'custom';
+  const pythonDir = pythonExe ? path.dirname(pythonExe) : '';
+  const pythonRoot = pythonDir && pythonDir.toLowerCase().endsWith(`${path.sep}scripts`)
+    ? path.dirname(pythonDir)
+    : pythonDir;
+  const extraDirs = [
+    pythonDir,
+    pythonRoot,
+    path.join(pythonRoot, 'Library', 'bin'),
+    path.join(pythonRoot, 'DLLs'),
+    path.join(pythonRoot, 'bin'),
+    path.join(APP_ROOT, 'vendor', 'cuda'),
+  ].filter((p) => p && fs.existsSync(p));
+  const pathEntries = String(env.PATH || '').split(path.delimiter).filter(Boolean);
+  env.PATH = [...extraDirs, ...pathEntries].filter(Boolean).join(path.delimiter);
+  return env;
+}
+
+function summarizeAdapters(adapters = []) {
+  if (!Array.isArray(adapters) || adapters.length === 0) return '';
+  return adapters
+    .map((a) => {
+      const name = a?.name ? String(a.name) : 'Unknown';
+      const vendor = a?.vendor ? String(a.vendor) : 'unknown';
+      const vram = Number(a?.vram_mb || 0);
+      const vramLabel = vram > 0 ? `${vram}MB` : '';
+      return [name, vendor !== 'unknown' ? vendor : '', vramLabel].filter(Boolean).join(' ');
+    })
+    .join('; ');
+}
+
+function runPythonJson(pythonExe, args, { cwd, timeoutMs = 15000 } = {}) {
+  return new Promise((resolve) => {
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const child = spawn(pythonExe, args, {
+      cwd: cwd || APP_ROOT,
+      shell: false,
+      windowsHide: true,
+      env: buildPythonEnv(pythonExe),
+    });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try {
+        child.kill();
+      } catch {
+        // ignore
+      }
+    }, Math.max(1000, Number(timeoutMs) || 15000));
+
+    child.stdout.on('data', (d) => {
+      stdout += d.toString();
+    });
+    child.stderr.on('data', (d) => {
+      stderr += d.toString();
+    });
+
+    const finalize = (payload) => {
+      clearTimeout(timer);
+      resolve(payload);
+    };
+
+    child.on('error', (err) => {
+      finalize({
+        ok: false,
+        error: String(err?.message || err),
+        stdout,
+        stderr,
+        code: err?.code,
+        timedOut,
+      });
+    });
+
+    child.on('close', (code, signal) => {
+      const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const lastLine = lines.length ? lines[lines.length - 1] : '';
+      if (!lastLine) {
+        finalize({
+          ok: false,
+          error: timedOut ? 'timeout' : (stderr.trim() || 'no_output'),
+          stdout,
+          stderr,
+          code,
+          signal,
+          timedOut,
+        });
+        return;
+      }
+      try {
+        const data = JSON.parse(lastLine);
+        finalize({ ok: true, data, stdout, stderr, code, signal, timedOut });
+      } catch (e) {
+        finalize({
+          ok: false,
+          error: `Failed to parse JSON: ${String(e)}`,
+          stdout,
+          stderr,
+          code,
+          signal,
+          timedOut,
+        });
+      }
+    });
+  });
+}
+
+async function detectComputeBackend(opts = {}) {
+  const logFn = typeof opts.log === 'function' ? opts.log : null;
+  const logInfo = (message, keys = {}) => logFn && logFn('INFO', 'compute', message, keys);
+  const logWarn = (message, keys = {}) => logFn && logFn('WARN', 'compute', message, keys);
+  const logError = (message, keys = {}) => logFn && logFn('ERROR', 'compute', message, keys);
   const python = getPipelinePythonPath();
+  const devOpts = getDeveloperOptions();
+  const hasCustomPath = Boolean(devOpts?.pythonPath && fs.existsSync(devOpts.pythonPath));
+  const hasEnvPath = Boolean(process.env.PYTHON_PATH && fs.existsSync(process.env.PYTHON_PATH));
+  const pythonSource = app.isPackaged
+    ? 'bundled'
+    : (hasCustomPath || hasEnvPath ? 'custom' : 'none');
   const pipelineDir = getPipelineDir();
-  const script = path.join(pipelineDir, 'tools', 'gpu_probe.py');
+  const probeScript = path.join(pipelineDir, 'tools', 'gpu_probe.py');
+  const smokeScript = path.join(pipelineDir, 'tools', 'cuda_smoke_test.py');
 
   const base = {
     availableGpu: false,
@@ -686,81 +858,99 @@ async function detectComputeBackend() {
   };
 
   if (!python) {
-    return { ...base, error: 'No Python path available (bundled runtime missing in packaged build)' };
+    return { ...base, error: 'No Python path available (no bundled runtime or custom path configured)' };
   }
 
-  if (!fs.existsSync(script)) {
+  if (!fs.existsSync(probeScript)) {
     return {
       ...base,
       error: 'gpu_probe.py not found in yt_pipeline/tools',
     };
   }
 
-  return await new Promise((resolve) => {
-    try {
-      const child = spawn(python, ['-u', script], {
-        cwd: pipelineDir,
-        shell: false,
-        env: {
-          ...process.env,
-        },
-      });
+  logInfo('Compute backend python executable', { python });
+  const probe = await runPythonJson(python, ['-u', probeScript], { cwd: pipelineDir, timeoutMs: 15000 });
+  const details = probe.ok ? (probe.data || {}) : {};
+  const adapters = Array.isArray(details.adapters) ? details.adapters : [];
+  const nvidiaGpus = Array.isArray(details.nvidia_gpus) ? details.nvidia_gpus : [];
+  const nvidiaPresent = Boolean(
+    details.nvidia_present
+      || nvidiaGpus.length > 0
+      || adapters.some((a) => String(a?.vendor || '').toLowerCase() === 'nvidia')
+  );
+  const adapterSummary = summarizeAdapters(adapters);
+  if (adapterSummary) {
+    logInfo('GPU adapters found', { adapters: adapterSummary });
+  } else {
+    logInfo('GPU adapters found', { adapters: 'none' });
+  }
+  logInfo('NVIDIA present', { nvidia: nvidiaPresent ? 'yes' : 'no' });
 
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (d) => {
-        stdout += d.toString();
-      });
-      child.stderr.on('data', (d) => {
-        stderr += d.toString();
-      });
-
-      child.on('error', (err) => {
-        resolve({
-          ...base,
-          error: String(err),
-        });
-      });
-
-      child.on('close', () => {
-        const trimmedOut = stdout.trim();
-        if (!trimmedOut) {
-          resolve({
-            ...base,
-            error: stderr.trim() || 'No output from gpu_probe.py',
-          });
-          return;
-        }
-        try {
-          const parsed = JSON.parse(trimmedOut);
-          const availableGpu = Boolean(parsed && parsed.cuda_available && (parsed.gpu_count || 0) > 0);
-          resolve({
-            availableGpu,
-            details: parsed || {},
-            error: parsed && typeof parsed.error === 'string' && parsed.error ? parsed.error : (stderr.trim() || null),
-            pythonPath: python,
-          });
-        } catch (e) {
-          resolve({
-            ...base,
-            error: `Failed to parse gpu_probe output: ${String(e)}`,
-          });
-        }
-      });
-    } catch (e) {
-      resolve({
-        ...base,
-        error: String(e),
+  let smoke = null;
+  if (nvidiaPresent) {
+    if (fs.existsSync(smokeScript)) {
+      logInfo('Smoke test python executable', { python });
+      logInfo('CUDA smoke test started', { script: smokeScript });
+      smoke = await runPythonJson(python, ['-u', smokeScript], { cwd: pipelineDir, timeoutMs: 20000 });
+    } else {
+      smoke = { ok: false, error: 'cuda_smoke_test.py not found in yt_pipeline/tools' };
+    }
+    if (smoke && smoke.ok && smoke.data && smoke.data.ok) {
+      logInfo('CUDA smoke test passed', { deviceCount: smoke.data.cuda_device_count || 0 });
+    } else {
+      const reason = smoke?.data?.reason || smoke?.error || 'cuda_smoke_failed';
+      logWarn('CUDA smoke test failed', { reason });
+    }
+    if (smoke?.data?.inference_test) {
+      logInfo('CUDA inference smoke test', {
+        status: smoke.data.inference_test,
+        error: smoke.data.inference_error || undefined,
+        model: smoke.data.inference_model || undefined,
       });
     }
-  });
+    if (smoke?.data?.dll_check?.status === 'failed') {
+      const missing = Array.isArray(smoke.data.dll_check.missing) ? smoke.data.dll_check.missing.join(', ') : '';
+      logWarn('CUDA runtime DLLs missing', { missing: missing || 'unknown' });
+    }
+  } else {
+    logInfo('CUDA smoke test skipped', { reason: 'no_nvidia_gpu' });
+  }
+
+  const smokeOk = Boolean(smoke && smoke.ok && smoke.data && smoke.data.ok);
+  const smokeData = smoke && smoke.data ? smoke.data : null;
+  const error =
+    (nvidiaPresent && !smokeOk)
+      ? (smoke?.error || smokeData?.error || smokeData?.reason || 'cuda_smoke_failed')
+      : (probe.ok ? (details?.error || null) : (probe.error || 'gpu_probe_failed'));
+
+  const firstNvidiaAdapter = adapters.find((a) => String(a?.vendor || '').toLowerCase() === 'nvidia') || null;
+  const normalizedDetails = {
+    ...details,
+    adapters,
+    nvidia_present: nvidiaPresent,
+    nvidia_gpus: nvidiaGpus,
+    gpu_count: smokeData?.cuda_device_count || nvidiaGpus.length || details?.gpu_count || 0,
+    gpu_name: nvidiaGpus[0]?.name || firstNvidiaAdapter?.name || details?.gpu_name || null,
+    vram_total_mb: nvidiaGpus[0]?.vram_total_mb || firstNvidiaAdapter?.vram_mb || details?.vram_total_mb || 0,
+    cuda_smoke: smokeData || null,
+    cuda_smoke_raw_error: smoke && !smoke.ok ? smoke.error : null,
+    cuda_available: smokeOk,
+    python_source: pythonSource,
+    python_exec: python,
+  };
+
+  return {
+    availableGpu: smokeOk,
+    details: normalizedDetails,
+    error,
+    pythonPath: python,
+  };
 }
 
-async function getComputeBackend() {
-  if (computeBackendCache) return computeBackendCache;
+async function getComputeBackend(opts = {}) {
+  if (computeBackendCache && !opts.forceRefresh) return computeBackendCache;
   try {
-    computeBackendCache = await detectComputeBackend();
+    computeBackendCache = await detectComputeBackend(opts);
   } catch (e) {
     computeBackendCache = {
       availableGpu: false,
@@ -774,7 +964,7 @@ async function getComputeBackend() {
 
 async function refreshComputeBackend() {
   computeBackendCache = null;
-  return await getComputeBackend();
+  return await getComputeBackend({ forceRefresh: true });
 }
 
 /** Returns the configured outputs base directory (absolute). Ensures it exists. */
@@ -3421,21 +3611,33 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
   };
 
   const developerOpts = getDeveloperOptions();
-  let computeInfo = null;
-  try {
-    computeInfo = await getComputeBackend();
-  } catch {
-    computeInfo = null;
-  }
-  const availableGpu = Boolean(computeInfo && computeInfo.availableGpu);
   const pref = developerOpts.computeBackendPreference || 'auto';
+  const debugMode = Boolean(developerOpts.debugMode);
+  let computeInfo = null;
   let effectiveDevice = 'cpu';
+  let fallbackReason = null;
   if (pref === 'force_cpu') {
+    log('INFO', 'compute', 'Force CPU selected; skipping GPU probe', {});
     effectiveDevice = 'cpu';
-  } else if (pref === 'prefer_gpu') {
-    effectiveDevice = availableGpu ? 'cuda' : 'cpu';
   } else {
-    effectiveDevice = availableGpu ? 'cuda' : 'cpu';
+    try {
+      computeInfo = await getComputeBackend({ forceRefresh: true, log });
+    } catch (e) {
+      computeInfo = null;
+      fallbackReason = String(e);
+    }
+    const availableGpu = Boolean(computeInfo && computeInfo.availableGpu);
+    const nvidiaPresent = Boolean(computeInfo && computeInfo.details && computeInfo.details.nvidia_present);
+    if (availableGpu) {
+      effectiveDevice = 'cuda';
+    } else {
+      effectiveDevice = 'cpu';
+      if (nvidiaPresent) {
+        fallbackReason = (computeInfo?.details?.cuda_smoke?.reason || computeInfo?.error || 'cuda_unavailable');
+      } else {
+        fallbackReason = fallbackReason || 'no_nvidia_gpu';
+      }
+    }
   }
   const whisperComputeType =
     effectiveDevice === 'cuda'
@@ -3444,9 +3646,16 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
 
   log('INFO', 'pipeline', 'Compute backend resolved', {
     preference: pref,
-    availableGpu,
+    availableGpu: effectiveDevice === 'cuda',
     effectiveDevice,
+    fallbackReason: fallbackReason || undefined,
   });
+  if (fallbackReason) {
+    log('WARN', 'pipeline', 'Compute backend fallback', { preference: pref, reason: fallbackReason });
+    if (pref === 'prefer_gpu') {
+      log('ERROR', 'compute', 'GPU requested but unavailable; falling back to CPU', { reason: fallbackReason });
+    }
+  }
 
   const appVersion = app?.getVersion?.() || '0.0.0';
   log('INFO', 'pipeline', 'Run started', {
@@ -3492,6 +3701,7 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
   }
 
   log('INFO', 'runner', 'Using Python for pipeline', { python });
+  log('INFO', 'compute', 'Pipeline python executable', { python });
 
   const smokeResult = await runPythonSmokeTest(python);
   if (!smokeResult.ok) {
@@ -3532,7 +3742,7 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
       ['--device', effectiveDevice]
     );
 
-  const pipelineEnv = {
+  const pipelineEnv = buildPythonEnv(python, {
     KMP_DUPLICATE_LIB_OK: 'TRUE',
     APP_USER_DATA: app.getPath('userData'),
     ...(effectiveAccessToken ? { SUPABASE_ACCESS_TOKEN: effectiveAccessToken } : {}),
@@ -3543,7 +3753,7 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
     WHISPER_COMPUTE_TYPE: whisperComputeType,
     ...(ffmpegPath ? { FFMPEG_PATH: ffmpegPath } : {}),
     ...(ffprobePath ? { FFPROBE_PATH: ffprobePath } : {}),
-  };
+  });
 
   const workingDir = path.dirname(script);
   log('INFO', 'runner', 'Spawning pipeline (no shell)', { python, script, cwd: workingDir });
@@ -3570,6 +3780,12 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
       onStderr(s) {
         const lines = s.split(/\r?\n/);
         for (const line of lines) {
+          const trimmed = line.replace(/\r/g, '').trim();
+          if (!trimmed) continue;
+          if (debugMode) {
+            writeLine(formatTechLog('WARN', 'pipeline', trimmed, { stream: 'stderr' }));
+            continue;
+          }
           const classified = classifyPipelineStderrLine(line);
           if (!classified) continue;
           writeLine(formatTechLog(classified.level, 'pipeline', classified.line, {}));

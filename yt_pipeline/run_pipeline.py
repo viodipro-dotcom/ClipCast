@@ -26,7 +26,9 @@ Notes:
 from __future__ import annotations
 
 import argparse
+import gc
 import hashlib
+import importlib.util
 import csv
 import json
 import os
@@ -346,96 +348,28 @@ def resolve_whisper_settings(
 
 def detect_gpu_capability():
     """
-    Detect if system has an NVIDIA GPU that is RTX 3050 or better.
+    Conservative CUDA runtime check (no optimistic fallback).
     Returns: (device, compute_type) tuple: ("cuda", "float16") or ("cpu", "int8")
     """
-    # Method 1: Try PyTorch (most reliable)
     try:
-        import torch  # type: ignore[import-not-found]
-        if torch.cuda.is_available():
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_name_lower = gpu_name.lower()
-            print(f"🔍 Detected GPU via PyTorch: {gpu_name}")
-            
-            # Check if it's an RTX GPU
-            if "rtx" in gpu_name_lower:
-                import re
-                match = re.search(r'rtx\s*(\d{4})', gpu_name_lower) or re.search(r'rtx(\d{4})', gpu_name_lower)
-                if match:
-                    gpu_number = int(match.group(1))
-                    if gpu_number >= 3050:
-                        print(f"✅ Detected RTX {gpu_number}, using CUDA mode")
-                        return ("cuda", "float16")
-                    else:
-                        print(f"⚠️  RTX {gpu_number} is below RTX 3050, using CPU")
-                        return ("cpu", "int8")
-            
-            # Check for modern NVIDIA GPUs (GeForce RTX, Quadro, etc.)
-            if any(x in gpu_name_lower for x in ["geforce", "quadro", "tesla"]):
-                import re
-                numbers = re.findall(r'\b(\d{4})\b', gpu_name)
-                if numbers:
-                    gpu_number = int(numbers[0])
-                    if gpu_number >= 2000:  # RTX 20xx, 30xx, 40xx series
-                        print(f"✅ Detected NVIDIA GPU {gpu_number}, using CUDA mode")
-                        return ("cuda", "float16")
-            
-            print(f"⚠️  GPU '{gpu_name}' not recognized as RTX 3050+, using CPU")
+        import ctranslate2  # type: ignore[import-not-found]
+        count = int(ctranslate2.get_cuda_device_count() or 0)
+        if count <= 0:
+            print("⚠️  CUDA runtime not available (no CUDA devices reported by ctranslate2)")
             return ("cpu", "int8")
-        else:
-            print("⚠️  CUDA not available in PyTorch")
-    except ImportError:
-        # PyTorch not installed, try alternative methods
-        pass
+        supported = list(ctranslate2.get_supported_compute_types("cuda") or [])
+        if "float16" not in [s.lower() for s in supported]:
+            print("⚠️  CUDA detected but float16 not supported by ctranslate2")
+            return ("cpu", "int8")
+        print(f"✅ CUDA runtime detected via ctranslate2 (devices={count})")
+        return ("cuda", "float16")
     except Exception as e:
-        print(f"⚠️  PyTorch GPU detection failed: {e}")
-    
-    # Method 2: Try nvidia-smi command (no PyTorch needed)
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            gpu_name = result.stdout.strip()
-            gpu_name_lower = gpu_name.lower()
-            print(f"🔍 Detected GPU via nvidia-smi: {gpu_name}")
-            
-            # Check for RTX GPUs
-            if "rtx" in gpu_name_lower:
-                import re
-                match = re.search(r'rtx\s*(\d{4})', gpu_name_lower) or re.search(r'rtx(\d{4})', gpu_name_lower)
-                if match:
-                    gpu_number = int(match.group(1))
-                    if gpu_number >= 3050:
-                        print(f"✅ Detected RTX {gpu_number} via nvidia-smi, using CUDA mode")
-                        return ("cuda", "float16")
-            
-            # Check for modern NVIDIA GPUs
-            if any(x in gpu_name_lower for x in ["geforce", "quadro", "tesla"]):
-                import re
-                numbers = re.findall(r'\b(\d{4})\b', gpu_name)
-                if numbers:
-                    gpu_number = int(numbers[0])
-                    if gpu_number >= 2000:
-                        print(f"✅ Detected NVIDIA GPU {gpu_number} via nvidia-smi, using CUDA mode")
-                        return ("cuda", "float16")
-    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
-        # nvidia-smi not available or failed
-        pass
-    
-    # Method 3: Try direct CUDA detection (attempt to use CUDA, fallback handled in load_whisper_model)
-    # If we can't detect via PyTorch or nvidia-smi, we'll try CUDA anyway and let faster-whisper handle errors
-    print("⚠️  Could not detect GPU via PyTorch or nvidia-smi")
-    print("   Will attempt CUDA mode - if it fails, will fallback to CPU automatically")
-    # Return CUDA as optimistic default - the actual model loading will catch errors
-    return ("cuda", "float16")
+        print(f"⚠️  CUDA runtime check failed: {e}")
+        return ("cpu", "int8")
 
 
 def load_whisper_model(device_override: Optional[str] = None):
+    _maybe_fix_openmp_conflict()
     # Import faster_whisper early to catch any import-time CUDA errors
     try:
         from faster_whisper import WhisperModel
@@ -473,9 +407,9 @@ def load_whisper_model(device_override: Optional[str] = None):
         auto_device, _ = detect_gpu_capability()
         cuda_available = auto_device == "cuda"
         if cuda_available:
-            print("✅ Detected NVIDIA GPU (RTX 3050+), using CUDA mode")
+            print("✅ CUDA runtime detected, using CUDA mode")
         else:
-            print("ℹ️  No suitable GPU detected, using CPU mode")
+            print("ℹ️  CUDA runtime not available, using CPU mode")
     else:
         cuda_available = device_pref == "cuda"
     device, compute_type = resolve_whisper_settings(device_pref, compute_pref, cuda_available)
@@ -583,6 +517,65 @@ def _is_gpu_error(exc: BaseException) -> bool:
         "float16",
     ]
     return any(p in msg for p in patterns)
+
+
+def _maybe_fix_openmp_conflict() -> None:
+    if not os.getenv("CLIPCAST_PY_ENV"):
+        return
+    try:
+        prefix = sys.prefix
+        conda_omp = os.path.join(prefix, "Library", "bin", "libiomp5md.dll")
+        spec = importlib.util.find_spec("ctranslate2")
+        if not spec or not spec.origin:
+            return
+        pkg_dir = os.path.dirname(spec.origin)
+        ct2_omp = os.path.join(pkg_dir, "libiomp5md.dll")
+        if not (os.path.isfile(conda_omp) and os.path.isfile(ct2_omp)):
+            return
+        disabled = ct2_omp + ".disabled"
+        if os.path.isfile(disabled):
+            return
+        os.rename(ct2_omp, disabled)
+        print(f"[openmp] Disabled duplicate libiomp5md.dll in ctranslate2: {ct2_omp}")
+    except Exception as exc:
+        print(f"[openmp] Failed to disable duplicate libiomp5md.dll: {exc}")
+
+
+def _release_whisper_model(model) -> None:
+    try:
+        print("[compute] Cleanup: releasing Whisper model")
+        del model
+    except Exception as exc:
+        print(f"[compute] Cleanup error: {exc}")
+    try:
+        gc.collect()
+        time.sleep(0.2)
+        print("[compute] Cleanup: gc complete")
+    except Exception as exc:
+        print(f"[compute] Cleanup gc error: {exc}")
+
+
+def _add_dll_dirs_for_python_root() -> None:
+    if not hasattr(os, "add_dll_directory"):
+        return
+    python_exe = sys.executable or ""
+    python_dir = os.path.dirname(python_exe)
+    python_root = python_dir
+    if python_dir.lower().endswith("\\scripts"):
+        python_root = os.path.dirname(python_dir)
+    dirs = [
+        python_dir,
+        python_root,
+        os.path.join(python_root, "Library", "bin"),
+        os.path.join(python_root, "DLLs"),
+        os.path.join(python_root, "bin"),
+    ]
+    for directory in dirs:
+        if directory and os.path.isdir(directory):
+            try:
+                os.add_dll_directory(directory)
+            except Exception:
+                pass
 
 
 # ----------------------------
@@ -2531,6 +2524,8 @@ def resolve_videos(args: argparse.Namespace) -> List[Path]:
 def main() -> int:
     if KMP_DUPLICATE_LIB_OK:
         os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    _add_dll_dirs_for_python_root()
+    _add_dll_dirs_for_python_root()
 
     args = parse_args()
     ensure_dirs()
@@ -2603,6 +2598,7 @@ def main() -> int:
                     text = transcribe_to_text(model, mp3_path)
                 except Exception as exc:
                     if CURRENT_WHISPER_DEVICE == "cuda" and _is_gpu_error(exc):
+                        print(f"[compute] GPU failure detail: {type(exc).__name__}: {exc}")
                         print("[compute] GPU failed for Whisper, reloading on CPU (int8) and retrying")
                         model = load_whisper_model("cpu")
                         text = transcribe_to_text(model, mp3_path)
@@ -2809,6 +2805,8 @@ def main() -> int:
     print(f"\n🧾 Report saved: {report_path}")
     print(f"📄 CSV saved: {csv_path}")
     print("\n✅ DONE")
+    _release_whisper_model(model)
+    model = None
     return 0 if counters["errors"] == 0 else 1
 
 
