@@ -102,9 +102,9 @@ jobs:
           $envName = "cuda-dlls"
           Write-Host "==> Create conda env: $envName"
           try {
-            conda create -y -n $envName -c nvidia -c conda-forge cuda-cudart libcublas
+            conda create -y -n $envName -c nvidia -c conda-forge cuda-cudart=12.* libcublas=12.*
           } catch {
-            throw "Conda env creation failed for $envName (cuda-cudart/libcublas)."
+            throw "Conda env creation failed for $envName (cuda-cudart=12.* / libcublas=12.*)."
           }
           Write-Host "==> Attempt to install cuDNN (optional)"
           try {
@@ -125,6 +125,7 @@ jobs:
           conda list -n $envName
           Write-Host "==> DLLs in $envPath\\Library\\bin"
           Get-ChildItem -Path (Join-Path $envPath "Library\\bin") -Filter "*.dll" | Select-Object -ExpandProperty Name
+          Write-Host "==> Verify required CUDA 12 DLLs exist"
           $requiredDlls = @("cublas64_12.dll","cublasLt64_12.dll","cudart64_12.dll")
           $missing = @()
           foreach ($dll in $requiredDlls) {
