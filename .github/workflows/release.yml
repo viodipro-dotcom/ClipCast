@@ -101,18 +101,30 @@ jobs:
           $ErrorActionPreference = "Stop"
           $envName = "cuda-dlls"
           Write-Host "==> Create conda env: $envName"
-          conda create -y -n $envName -c conda-forge cudatoolkit=12
+          try {
+            conda create -y -n $envName -c nvidia -c conda-forge cuda-cudart libcublas
+          } catch {
+            throw "Conda env creation failed for $envName (cuda-cudart/libcublas)."
+          }
           Write-Host "==> Attempt to install cuDNN (optional)"
           try {
-            conda install -y -n $envName -c conda-forge cudnn=8
+            conda install -y -n $envName -c nvidia -c conda-forge cudnn
           } catch {
-            Write-Host "cudnn install failed or unavailable; continuing"
+            try {
+              conda install -y -n $envName -c nvidia -c conda-forge libcudnn
+            } catch {
+              Write-Host "cudnn/libcudnn install failed or unavailable; continuing"
+            }
           }
           $envs = conda env list --json | ConvertFrom-Json
           $envPath = $envs.envs | Where-Object { $_ -match "\\$envName$" } | Select-Object -First 1
           if (-not $envPath) { throw "Conda env path for $envName not found" }
           "CONDA_PREFIX=$envPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
           Write-Host "CONDA_PREFIX set to $envPath"
+          Write-Host "==> Conda packages installed in $envName"
+          conda list -n $envName
+          Write-Host "==> DLLs in $envPath\\Library\\bin"
+          Get-ChildItem -Path (Join-Path $envPath "Library\\bin") -Filter "*.dll" | Select-Object -ExpandProperty Name
           $requiredDlls = @("cublas64_12.dll","cublasLt64_12.dll","cudart64_12.dll")
           $missing = @()
           foreach ($dll in $requiredDlls) {
