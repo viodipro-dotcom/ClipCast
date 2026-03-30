@@ -9,14 +9,14 @@ How to fix common issues based on the app’s actual behavior.
 
 <StepBlock title="Step 1 — Generate Metadata (pipeline) fails" imageSrc="/docs/images/troubleshooting/01-pipeline-log.jpg" imageAlt="Pipeline Log" caption="Screenshot 01 — Details panel: Activity and Show technical log">
 If **Generate Metadata** fails, the app shows: *"Metadata generation failed (code: X). Check Technical Log for details."*  
-**What to do:** Select the row in the table, open the **Details** panel on the right, and click **Show technical log** in the **Activity** section to see the log for that file. For full runner output, check the file <code>last_run.log</code> on disk in the pipeline reports folder (<code>yt_pipeline/outputs/Reports/last_run.log</code> relative to the app).  
-Ensure **Python** and the pipeline script (<code>yt_pipeline/run_pipeline.py</code>) and its dependencies are installed and available (e.g. <code>PYTHON_PATH</code> or conda <code>yt-gpu</code> if used).
+**What to do:** Select the row, open the **Details** panel, and click **Show technical log** in the **Activity** section to see the error for that file.  
+If it still fails, retry once and make sure the video file is accessible and you have free disk space. If needed, share the technical log with support.
 </StepBlock>
 
 <StepBlock title="Step 2 — YouTube connection fails" imageSrc="/docs/images/troubleshooting/02-youtube-connect.jpg" imageAlt="Connect YouTube" caption="Screenshot 02 — Connect YouTube and OAuth setup">
 If **Connect YouTube** fails:  
-- **"OAuth credentials missing"** — Click **Open UserData** (from the **Settings** menu → **Developer mode** dialog) and create <code>google_oauth_client.json</code> in that folder with your Client ID and Secret.  
-- **Error 401 / invalid_client** — Use an OAuth client type **Desktop app** (not Web application), copy Client ID and Secret fully, enable **YouTube Data API v3**, and configure the OAuth consent screen. See **YouTube Connect &amp; Upload** and <code>GOOGLE_OAUTH_SETUP.md</code> if available.  
+- **"OAuth credentials missing"** — Follow **YouTube Connect &amp; Upload** to set up credentials. **Advanced:** If you manage your own OAuth credentials, add them via **Settings → Developer mode → Open User Data**.  
+- **Error 401 / invalid_client** — Use an OAuth client type **Desktop app** (not Web application), copy Client ID and Secret fully, enable **YouTube Data API v3**, and configure the OAuth consent screen. See **YouTube Connect &amp; Upload** for the setup checklist.  
 Use **Test connection** and **Reconnect** from the **YouTube chip** in the command bar (click the YouTube status) to verify credentials.
 </StepBlock>
 
@@ -28,14 +28,20 @@ If a row shows **"File missing on disk. Re-import or remove this row."** (status
 If upload fails, check the **Activity** section in the **Details** panel and **Show technical log** for the selected row. Use **Retry upload** (for selected failed items) to try again. For YouTube quota issues, wait and retry later. Ensure **YouTube** is connected (Connect YouTube in the toolbar or Settings) and credentials are valid.
 </StepBlock>
 
-<StepBlock title="Step 5 — App won't start" imageSrc="/docs/images/troubleshooting/05-app-wont-start.jpg" imageAlt="Main window" caption="Screenshot 05 — Visual C++ (Windows) or Security (macOS)">
+<StepBlock title="Step 5 — GPU detected, but ClipCast still uses CPU">
+ClipCast may detect your NVIDIA GPU, but still fall back to CPU if no usable CUDA device is exposed by the current driver/runtime. GPU mode requires an NVIDIA GPU and a **recent NVIDIA driver** compatible with our CUDA 12.x stack.  
+**Check:** Open **Developer Mode**, review **Selected device**, **CUDA smoke test**, and **Fallback reason**. Run <code>nvidia-smi</code>.  
+If the driver is too old, **update the NVIDIA driver**, restart the PC, and test again. If GPU mode is unavailable, ClipCast falls back to CPU automatically.
+</StepBlock>
+
+<StepBlock title="Step 6 — App won't start" imageSrc="/docs/images/troubleshooting/05-app-wont-start.jpg" imageAlt="Main window" caption="Screenshot 05 — Visual C++ (Windows) or Security (macOS)">
 On **Windows**, install the latest **Visual C++ redistributable**. On **macOS**, if the app is blocked, go to **System Preferences → Security &amp; Privacy** and allow the app.
 </StepBlock>
 
 **Common tools in the app**
 - **Show technical log** — In the **Details** panel when a row is selected: **Activity** section → **Show technical log**. Shows the log for that row (including pipeline and upload messages).
-- **Developer mode** — In the **Settings** (gear) menu: opens a dialog with **Open UserData** and other advanced options. Use with caution.
-- **Diagnostics** — In the **Settings** (gear) menu: shows **Connections** (e.g. YouTube connected/not), **Auto Upload** (enabled, silent), **Jobs** (total, processing), and **System info** (platform, architecture, version) for support.
+- **Developer mode** — In the **Settings** (gear) menu: advanced tools like **Open User Data** and **Open outputs**.
+- **Diagnostics** — In the **Settings** (gear) menu: shows **Connections**, **Auto Upload**, **Jobs**, and **System info** for support.
 
 <NextLinks prev={{ slug: "settings", label: "Settings" }} next={{ slug: "faq", label: "FAQ" }} />
 

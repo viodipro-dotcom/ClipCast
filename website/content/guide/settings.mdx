@@ -13,16 +13,16 @@ Click the **Settings** (gear) icon in the **Command bar**. The dropdown opens wi
 
 <StepBlock title="Step 2 — Interface" imageSrc="/docs/images/settings/02-interface.jpg" imageAlt="Interface dialog" caption="Screenshot 02 — Interface: UI size, theme, language, command bar position, panels layout">
 Choose **Interface** to open the Interface dialog. You can set:
-- **UI size** — Slider from 100% to 200% (with A− / A+ buttons). Persisted in localStorage.
-- **Day / Night** — Theme switch (light/dark). Persisted in localStorage.
-- **Language** — Dropdown for app language. Persisted via app settings (main process).
-- **Command bar position** — **Top** or **Bottom** (where the main action bar appears). Persisted in localStorage with other interface settings.
-- **Panels layout** — **Default** or **Swapped** (order of table and Details panel). Persisted in localStorage.
-Click **Close** to apply. All settings are saved automatically. The **Details panel** width is not in this dialog — resize it by dragging the splitter between the table and the Details panel; that width is also saved automatically.
+- **UI size** — Slider from 100% to 200% (with A− / A+ buttons).
+- **Day / Night** — Theme switch (light/dark).
+- **Language** — Dropdown for app language.
+- **Command bar position** — **Top** or **Bottom** (where the main action bar appears).
+- **Panels layout** — **Default** or **Swapped** (order of table and Details panel).
+Click **Close** to apply. All settings are saved automatically. The **Details panel** width is not in this dialog — resize it by dragging the splitter between the table and the Details panel.
 </StepBlock>
 
 <StepBlock title="Step 3 — Account" imageSrc="/docs/images/settings/03-account.jpg" imageAlt="Account dialog" caption="Screenshot 03 — Account: Manage billing, Subscription (coming soon)">
-Choose **Account** to open the Account dialog. It shows **Manage billing** and **Subscription** (both show “coming soon” when clicked). YouTube sign-in is **not** in this dialog: use the **YouTube chip** in the Command bar (click it) for **Test connection** and **Reconnect**. To add OAuth credentials, place <code>google_oauth_client.json</code> in the UserData folder — open that folder via **Settings → Developer mode → Open UserData**. See **YouTube Connect & Upload** for the full flow.
+Choose **Account** to open the Account dialog. It shows **Manage billing** and **Subscription** (both show “coming soon” when clicked). YouTube sign-in is **not** in this dialog: use the **YouTube chip** in the Command bar (click it) for **Test connection** and **Reconnect**. **Advanced:** If you manage your own OAuth credentials, follow **YouTube Connect & Upload** and add them via **Settings → Developer mode → Open User Data**.
 </StepBlock>
 
 <StepBlock title="Step 4 — Custom AI" imageSrc="/docs/images/settings/04-custom-ai.jpg" imageAlt="Custom AI dialog" caption="Screenshot 04 — Custom AI: presets and instructions">
@@ -34,16 +34,16 @@ Choose **Diagnostics** to open the Diagnostics dialog. It shows read-only status
 </StepBlock>
 
 <StepBlock title="Step 6 — Developer mode" imageSrc="/docs/images/settings/06-developer-mode.jpg" imageAlt="Developer mode dialog" caption="Screenshot 06 — Developer mode: Debug mode, Open UserData, Open outputs">
-Choose **Developer mode** to open the Developer mode dialog. It shows a warning and: **Debug mode** — Toggle for extra debug behavior (stored in localStorage); **Developer Actions** — **Open UserData** (folder where OAuth credentials and app data live) and **Open outputs** (pipeline output folder, e.g. <code>yt_pipeline/outputs</code>). Use **Open UserData** to place <code>google_oauth_client.json</code>; use **Open outputs** to open the pipeline output folder. There is no separate “output path” setting in the app — you only open the folder from here or from the **Details panel** (**Open outputs** when a row is selected).
+Choose **Developer mode** to open the Developer mode dialog. It shows a warning and: **Debug mode** (extra diagnostics) and **Developer Actions** like **Open User Data** (app data folder) and **Open outputs** (outputs folder). There is no separate “output path” setting in the app — you open the folder from here or from the **Details panel** (**Open outputs** when a row is selected).
 </StepBlock>
 
 **Persistence**
-- **Interface** choices (UI size, theme, language, command bar position, panels layout, details panel width) are saved automatically and persist across restarts (theme and UI scale in localStorage; language via main process; command bar position, panels layout, and details panel width in localStorage under <code>creatorUploader.interfaceSettings.v1</code>).
-- **Developer** Debug mode is stored in localStorage (<code>developerDebugMode</code>).
+- **Interface** choices (UI size, theme, language, command bar position, panels layout, details panel width) are saved automatically and persist across restarts.
+- **Developer** Debug mode is saved automatically.
 
 **Common issues**
-- **YouTube not in Account** — Connect or reconnect YouTube from the **YouTube chip** in the Command bar (Test connection, Reconnect). Put OAuth credentials in UserData (open via **Developer mode → Open UserData**).
-- **Output folder** — By default pipeline outputs go to <code>yt_pipeline/outputs</code>. You can change this in **Settings → Developer mode** under **Outputs folder** (Browse… / Reset). Open the folder via **Developer mode → Open outputs** or **Details panel → Open outputs**.
+- **YouTube not in Account** — Connect or reconnect YouTube from the **YouTube chip** in the Command bar (Test connection, Reconnect).
+- **Output folder** — You can change the Outputs folder in **Settings → Developer mode** under **Outputs folder** (Browse… / Reset). Open it via **Developer mode → Open outputs** or **Details panel → Open outputs**.
 
 <NextLinks prev={{ slug: "scheduler", label: "Scheduler" }} next={{ slug: "troubleshooting", label: "Troubleshooting" }} />
 

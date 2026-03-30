@@ -5,27 +5,24 @@ description: Platform-specific exports, folder structure, Open exports vs Open o
 
 <DocPage title="Exports & Targets" description="Where exports are stored, how to open them, Targets (YT/IG/TT), and Visibility.">
 
-Exports are **platform-specific files** (title, description, hashtags) written under <code>yt_pipeline/outputs</code> when you run **Generate Metadata** (see **Pipeline**). Export status is shown in the **Details panel** (Metadata section and platform columns) and in the Jobs table. **Targets** and **Visibility** are stored per row and control which platforms you intend to publish to and how (e.g. YouTube privacy).
+Exports are **platform-specific files** (title, description, hashtags) saved in your **Outputs folder** when you run **Generate Metadata** (see **Pipeline**). Export status is shown in the **Details panel** (Metadata section and platform columns) and in the Jobs table. **Targets** and **Visibility** are stored per row and control which platforms you intend to publish to and how (e.g. YouTube privacy).
 
 ### Where exports are stored
 
-All pipeline output lives under <code>yt_pipeline/outputs</code> (or your configured pipeline output path):
+All pipeline output lives under your **Outputs folder**:
 
-- **Metadata** — <code>outputs/Metadata/{'{stem}'}.json</code>: central metadata per video (source path, per-platform title/description/hashtags). The <code>{'{stem}'}</code> is derived from the video filename (and path hash to avoid collisions).
-- **Exports per platform** — Each platform has its own folder with **one set of files per video** (same stem):
-  - <code>outputs/Exports/YouTube/</code>: <code>{'{stem}'}.title.txt</code>, <code>{'{stem}'}.description.txt</code>, <code>{'{stem}'}.hashtags.txt</code>, <code>{'{stem}'}.json</code>
-  - <code>outputs/Exports/Instagram/</code>: same file names
-  - <code>outputs/Exports/TikTok/</code>: same file names
+- **Metadata** — Central metadata per video (title, description, hashtags).
+- **Exports per platform** — Each platform has its own folder with **one set of files per video**.
 
-So each platform gets a **single folder** containing all videos’ export files (identified by stem), not a subfolder per video.
+So each platform gets a **single folder** containing all videos’ export files, not a subfolder per video.
 
 ### Open exports vs Open outputs
 
 In the **Details panel**, with a row selected, open the **Metadata** accordion:
 
 - **Platform dropdown** — Choose **YouTube**, **Instagram**, or **TikTok** to view and edit that platform’s metadata for the selected row.
-- **Open exports** — Opens the **Exports folder for the currently selected platform** (e.g. <code>outputs/Exports/YouTube</code>). You see all videos’ export files for that platform in one folder. The button uses the platform selected in the dropdown, not a per-row “target.”
-- **Open outputs** — Opens the **root outputs folder** (<code>yt_pipeline/outputs</code>), where you can see <code>Metadata</code> and <code>Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>.
+- **Open exports** — Opens the **Exports folder for the currently selected platform**. You see all videos’ export files for that platform in one folder. The button uses the platform selected in the dropdown, not a per-row “target.”
+- **Open outputs** — Opens the **root Outputs folder**, where you can see **Metadata** and **Exports** subfolders.
 
 ### Targets (YT / IG / TT)
 
@@ -38,7 +35,7 @@ Targets are **per-row toggles** (YouTube, Instagram, TikTok) meaning “I intend
 ### Steps in the UI
 
 <StepBlock title="Step 1 — Run the pipeline first">
-Run **Generate Metadata** for your rows (see **Pipeline**). Exports and metadata are written under <code>yt_pipeline/outputs</code> (Metadata + Exports/YouTube, Exports/Instagram, Exports/TikTok).
+Run **Generate Metadata** for your rows (see **Pipeline**). Exports and metadata are written under your **Outputs folder**.
 </StepBlock>
 
 <StepBlock title="Step 2 — Targets and export status">
@@ -46,13 +43,13 @@ Select a **row**. The **Details panel** shows platform columns (YouTube, Instagr
 </StepBlock>
 
 <StepBlock title="Step 3 — Open export or outputs folder">
-In the **Metadata** section, pick a **platform** in the dropdown. **Open exports** opens that platform’s Exports folder (e.g. Exports/YouTube). **Open outputs** opens the root <code>yt_pipeline/outputs</code> folder. Exports contain title, description, hashtags, and platform-specific formatting.
+In the **Metadata** section, pick a **platform** in the dropdown. **Open exports** opens that platform’s Exports folder. **Open outputs** opens the root Outputs folder. Exports contain title, description, hashtags, and platform-specific formatting.
 </StepBlock>
 
 **Common issues**
 - **Exports not there** — Run **Generate Metadata** (Pipeline) first; exports are created when the pipeline runs.
 - **Open exports** — Opens the folder for the platform **selected in the Metadata dropdown** (YouTube/Instagram/TikTok), not a separate “per-row” folder.
-- **Open outputs** — Opens the main <code>yt_pipeline/outputs</code> folder (Metadata + all Exports subfolders).
+- **Open outputs** — Opens the main Outputs folder (Metadata + all Exports subfolders).
 
 <NextLinks prev={{ slug: "presets", label: "Presets" }} next={{ slug: "youtube-connect-upload", label: "YouTube Connect & Upload" }} />
 

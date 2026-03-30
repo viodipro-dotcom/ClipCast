@@ -21,7 +21,7 @@ The dialog closes after you confirm; new rows appear in the Jobs table.
 </StepBlock>
 
 <StepBlock title="Step 3 — Rows appear in the table" imageSrc="/docs/images/add-files-jobs/03-jobs-grid.jpg" imageAlt="Jobs table with video rows" caption="Screenshot 03 — Jobs table: each file appears as a row">
-Each new file becomes one **row** in the **Jobs table** with default **Title** (filename), **Status** (e.g. Ready), and platform targets. If **Auto plan** is on, new rows get default targets and may get a **Schedule** (publish time) assigned automatically. If the app finds existing metadata in <code>yt_pipeline/outputs</code> for that file, the row status is updated to **Done** after a short check.
+Each new file becomes one **row** in the **Jobs table** with default **Title** (filename), **Status** (e.g. Ready), and platform targets. If **Auto plan** is on, new rows get default targets and may get a **Schedule** (publish time) assigned automatically. If the app finds existing metadata for that file, the row status is updated to **Done** after a short check.
 </StepBlock>
 
 <StepBlock title="Step 4 — Select a row for details" imageSrc="/docs/images/add-files-jobs/04-select-row-details.jpg" imageAlt="Selected row and Details panel" caption="Screenshot 04 — Details panel shows selected row">
@@ -33,7 +33,7 @@ In the **Details panel**, edit **Title** and **Description** as needed. After ru
 </StepBlock>
 
 <StepBlock title="Step 6 — Run the pipeline" imageSrc="/docs/images/add-files-jobs/06-run-pipeline.jpg" imageAlt="Generate button in Details panel" caption="Screenshot 06 — Details panel: Generate">
-Click **Generate** in the **Details panel** (Metadata section) for the selected row, or select multiple rows, click **Publish**, choose **Metadata only**, then **Generate**. Outputs are written to <code>yt_pipeline/outputs</code> and the row status updates.
+Click **Generate** in the **Details panel** (Metadata section) for the selected row, or select multiple rows, click **Publish**, choose **Metadata only**, then **Generate**. Outputs are saved to your **Outputs folder** and the row status updates.
 </StepBlock>
 
 **Drag-and-drop** — You can also drop video files onto the main app area. Supported extensions for drop: **MP4, MOV, AVI, MKV, WEBM, FLV, WMV, M4V**. The same logic applies: one row per file, duplicates skipped.
@@ -44,7 +44,7 @@ Click **Generate** in the **Details panel** (Metadata section) for the selected 
 - **Unsupported formats** — The file picker only lists MP4, MOV, MKV, WEBM. Folder scan also includes AVI. Other formats are not added via the dialog; drag-and-drop accepts more (e.g. AVI, FLV, WMV, M4V).
 - **Duplicate file** — If a file path is already in the table or in scheduled jobs, it is skipped (no second row).
 - **Missing file** — If a file was moved or deleted, remove the row or re-add the file from its new location.
-- **Many files** — You can add many at once; run the pipeline per row or in batch. See **Pipeline** for logs and output location.
+- **Many files** — You can add many at once; run the pipeline per row or in batch. See **Pipeline** for logs and where outputs are stored.
 
 <NextLinks prev={{ slug: "ui-overview", label: "UI Overview" }} next={{ slug: "pipeline", label: "Pipeline" }} />
 

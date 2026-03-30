@@ -28,11 +28,11 @@ Click **Add** in the command bar to open the **Add Videos** dialog. Choose **Fil
 </StepBlock>
 
 <StepBlock title="Step 6 — Generate metadata (bulk)" imageSrc="/docs/images/getting-started/07-metadata-bulk.jpg" imageAlt="Publish dialog with Metadata only option" caption="Screenshot 06 — Publish → Metadata only → Generate">
-Select one or more rows, click **Publish**, choose **Metadata only**, then click **Generate**. The app runs the pipeline (transcript + AI metadata) only for rows that do not yet have metadata for the requested platforms; outputs are written under <code>yt_pipeline/outputs</code>. Row status updates to **Processing** then **Done** (or **Error**). If all selected rows already have metadata, you see a message and no pipeline runs.
+Select one or more rows, click **Publish**, choose **Metadata only**, then click **Generate**. The app runs the pipeline (transcript + AI metadata) only for rows that do not yet have metadata for the requested platforms; outputs are written to your **Outputs folder**. Row status updates to **Processing** then **Done** (or **Error**). If all selected rows already have metadata, you see a message and no pipeline runs.
 </StepBlock>
 
 <StepBlock title="Step 7 — Generate metadata (single row)" imageSrc="/docs/images/getting-started/08-metadata-single.jpg" imageAlt="Details panel metadata section with Generate" caption="Screenshot 07 — Details → Metadata → Generate">
-For a single video: click a row to open **Details**, then in the **Metadata** section click **Generate**. You can generate for all platforms or only for missing ones. Pipeline behavior is the same as bulk (outputs in <code>yt_pipeline/outputs</code>).
+For a single video: click a row to open **Details**, then in the **Metadata** section click **Generate**. You can generate for all platforms or only for missing ones. Pipeline behavior is the same as bulk (outputs in your **Outputs folder**).
 </StepBlock>
 
 <StepBlock title="Step 8 — Plan: set targets and schedule" imageSrc="/docs/images/getting-started/9-plan.jpg" imageAlt="Plan dialog with times and start date" caption="Screenshot 08 — Plan: set targets, times, start date, then Apply to N items">
@@ -40,16 +40,16 @@ Select the rows you want to schedule. Click **Plan**. In the Plan dialog: (1) **
 </StepBlock>
 
 <StepBlock title="Step 9 — Publish to YouTube" imageSrc="/docs/images/getting-started/11-publish-youtube.jpg" imageAlt="Publish dialog with YouTube only and Publish to YouTube" caption="Screenshot 09 — Publish → YouTube only → Publish to YouTube">
-Select one or more rows, click **Publish**, choose **YouTube only**, then **Publish to YouTube**. Rows with a future **publish time** are scheduled on YouTube (<code>publishAt</code>); rows without a future time are uploaded **now**. You must be signed in to YouTube (the command bar shows **YouTube connected** when ready).
+Select one or more rows, click **Publish**, choose **YouTube only**, then **Publish to YouTube**. Rows with a future **publish time** are scheduled on YouTube; rows without a future time are uploaded **now**. You must be signed in to YouTube (the command bar shows **YouTube connected** when ready).
 </StepBlock>
 
 <StepBlock title="Step 10 — Auto upload and Manual Assist" imageSrc="/docs/images/getting-started/12-auto-upload.jpg" imageAlt="Publish dialog Auto upload toggle and Manual Assist Center" caption="Screenshot 10 — Auto upload and Manual Assist">
-In the **Publish** dialog you can enable **Auto upload**: scheduled items run automatically. **YouTube** uploads and schedules fully in the app. For **Instagram** and **TikTok**, the app cannot upload directly; use **Manual Assist**: open the Manual Assist view in the app by going to **#/assist-center** (e.g. via a link or in-app navigation). There you see the queue of due jobs, use **Assist Next** to open the platform upload page and copy caption/hashtags to clipboard, then **Mark as posted** when done.
+In the **Publish** dialog you can enable **Auto upload**: scheduled items run automatically. **YouTube** uploads and schedules fully in the app. For **Instagram** and **TikTok**, the app cannot upload directly; use **Manual Assist**: open the Manual Assist view in the app. There you see the queue of due jobs, use **Assist Next** to open the platform upload page and copy caption/hashtags to clipboard, then **Mark as posted** when done.
 </StepBlock>
 
 **Common issues**
 - **App won't start** — On Windows, install the latest Visual C++ redistributable. On macOS, if the app is blocked, go to System Preferences → Security &amp; Privacy and allow ClipCast.
-- **Where files are stored** — Row data and pipeline outputs use folders on your machine. Default pipeline output is under <code>yt_pipeline/outputs</code> (configurable in **Settings**). You can change paths in Settings.
+- **Where files are stored** — Row data and pipeline outputs use folders on your machine. The Outputs folder is configurable in **Settings**.
 - **No metadata generated** — Ensure rows are **selected** before **Publish → Metadata only → Generate**. Only rows that lack metadata for the requested platforms are sent to the pipeline; if all selected already have metadata, you get a message.
 - **Plan does nothing** — You must **select at least one row** before opening Plan. The **Apply to N items** button applies the plan only to the selected rows.
 

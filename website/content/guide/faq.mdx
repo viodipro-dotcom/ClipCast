@@ -32,16 +32,7 @@ Supported video formats: MP4, MOV, AVI, MKV, WEBM, FLV, WMV, M4V.
 
 ## Where are exports stored?
 
-By default, pipeline outputs (transcripts, metadata, exports) go to <code>yt_pipeline/outputs</code>. You can change this in Settings.
-
-## Port 5173 already in use — what do I do?
-
-If <code>npm run dev</code> reports the port is in use, find and stop the process:
-
-<pre>netstat -ano | findstr :5173
-taskkill /PID &lt;PID&gt; /F</pre>
-
-(On macOS/Linux, use <code>lsof -i :5173</code> and <code>kill</code>.)
+By default, pipeline outputs (transcripts, metadata, exports) go to your **Outputs folder**. You can change this in **Settings**.
 
 ## YouTube won't connect — what to check?
 
@@ -49,15 +40,7 @@ taskkill /PID &lt;PID&gt; /F</pre>
 2. Copy Client ID and Secret fully.
 3. Enable **YouTube Data API v3** in Google Cloud Console.
 4. Configure the OAuth consent screen.
-5. Place <code>google_oauth_client.json</code> in the UserData folder (use **Open UserData** from **Settings** → **Account**).
-
-## How do I regenerate guide screenshots?
-
-If the UI changes and you need fresh screenshots, from the app repo root run:
-
-<pre>npm run screenshots</pre>
-
-Then open the website guide at <code>/guide/screenshots</code> to view all images.
+5. **Advanced:** Add your OAuth credentials via **Settings → Developer mode → Open User Data** (see **YouTube Connect & Upload**).
 
 <NextLinks prev={{ slug: "troubleshooting", label: "Troubleshooting" }} />
 

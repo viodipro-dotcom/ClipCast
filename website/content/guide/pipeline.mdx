@@ -5,22 +5,20 @@ description: Run transcript and metadata pipeline.
 
 <DocPage title="Pipeline" description="Run transcript and metadata pipeline.">
 
-The **pipeline** is a Python workflow that runs **per video**: it extracts audio, generates a transcript, creates AI metadata (title, description, hashtags) for YouTube, Instagram, and TikTok, and writes platform exports. The app invokes it when you click **Generate** (for the selected row) or **Publish → Metadata only → Generate** (for selected rows).
+The **pipeline** is the processing flow that runs **per video**: it extracts audio, generates a transcript, creates AI metadata (title, description, hashtags) for YouTube, Instagram, and TikTok, and writes platform exports. The app invokes it when you click **Generate** (for the selected row) or **Publish → Metadata only → Generate** (for selected rows).
 
 **Who gets processed:** Only rows that **do not yet have** metadata for the requested platforms are sent to the pipeline; the app checks outputs on disk first. If all selected rows already have metadata, you see a message and no pipeline runs. Rows already being processed are skipped (single-flight).
 
 **Optional platforms:** You can generate metadata only for specific platforms (e.g. only YouTube). In the **Details** panel, if some platforms already have metadata, **Generate** can be run for the missing platform(s). The app passes the chosen platforms to the pipeline so only those are (re)generated and merged with existing metadata.
 
-Outputs go to <code>yt_pipeline/outputs</code> (relative to the app). Logs stream in the **Pipeline Log** section in the **Details** panel and are saved to <code>yt_pipeline/outputs/Reports/last_run.log</code>.
+Outputs go to your **Outputs folder**. Logs stream in the **Pipeline Log** section in the **Details** panel and can be reviewed per item via **Show technical log**.
 
 ### What the pipeline does per video
 
-1. **Audio** — Extracts audio with ffmpeg → <code>outputs/Audio/&#123;stem&#125;.mp3</code> (mono 16 kHz). Skipped if the file already exists and is non-empty.
-2. **Transcript** — Transcribes with faster-whisper → <code>outputs/Transcripts/&#123;stem&#125;.txt</code>. Skipped if a transcript file already exists and is non-empty; otherwise the existing file is used. If the transcript is too short (e.g. under 40 characters), the pipeline stops with an error for that video.
-3. **Metadata** — Generates title, description, and hashtags with OpenAI using your **Custom AI** settings (loaded from app user data). Writes <code>outputs/Metadata/&#123;stem&#125;.json</code>. If metadata for the requested platform(s) already exists, OpenAI is skipped and existing metadata is reused (or merged when only some platforms were requested).
-4. **Exports** — Writes platform-specific files under <code>outputs/Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>: <code>&#123;stem&#125;.title.txt</code>, <code>&#123;stem&#125;.description.txt</code>, <code>&#123;stem&#125;.hashtags.txt</code>, <code>&#123;stem&#125;.json</code>. Only the platforms that were requested (or all three if none specified) are written.
-
-The <code>&#123;stem&#125;</code> is derived from the video filename (normalized) plus a short path hash to avoid collisions between videos with the same name in different folders.
+1. **Audio** — Extracts audio. Skipped if it already exists and is non-empty.
+2. **Transcript** — Generates a transcript. Skipped if one already exists and is non-empty. If the transcript is too short, the pipeline stops with an error for that video.
+3. **Metadata** — Generates title, description, and hashtags using your **Custom AI** settings. If metadata already exists for the requested platform(s), it is reused or merged.
+4. **Exports** — Writes platform-specific files in your **Outputs folder**. Only the platforms that were requested (or all three if none specified) are written.
 
 ### How to run the pipeline
 
@@ -33,16 +31,16 @@ Select the row(s). Then either: in the **Details** panel click **Generate** in t
 </StepBlock>
 
 <StepBlock title="Step 3 — Watch the log" imageSrc="/docs/images/pipeline/03-watch-log.jpg" imageAlt="Pipeline Log area" caption="Screenshot 03 — Pipeline Log shows progress and output">
-The app runs the Python script; progress and logs appear in the **Pipeline Log** section in the **Details** panel. Each processed file is reported (e.g. OK, SKIP_OPENAI, ERROR). Row status updates to **Processing** and then **Done** (or **Error**) as the pipeline finishes.
+The app processes the file and shows progress in the **Pipeline Log** section in the **Details** panel. Row status updates to **Processing** and then **Done** (or **Error**) as the pipeline finishes.
 </StepBlock>
 
-<StepBlock title="Step 4 — Find outputs" imageSrc="/docs/images/pipeline/04-find-outputs.jpg" imageAlt="Pipeline outputs" caption="Screenshot 04 — Outputs in yt_pipeline/outputs">
-When the run finishes, outputs are in <code>yt_pipeline/outputs</code>: <code>Audio</code>, <code>Transcripts</code>, <code>Metadata</code>, and <code>Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>. Run reports and logs are written to <code>yt_pipeline/outputs/Reports/</code> (e.g. <code>last_run.log</code>, <code>report_&#42;.txt</code>, <code>report_&#42;.csv</code>). Use **Open outputs** or **Open exports** in the Details panel to open these folders.
+<StepBlock title="Step 4 — Find outputs" imageSrc="/docs/images/pipeline/04-find-outputs.jpg" imageAlt="Pipeline outputs" caption="Screenshot 04 — Outputs folder">
+When the run finishes, outputs are in your **Outputs folder**: <code>Audio</code>, <code>Transcripts</code>, <code>Metadata</code>, and <code>Exports/YouTube</code>, <code>Exports/Instagram</code>, <code>Exports/TikTok</code>. Run reports and logs are written to <code>Reports</code>. Use **Open outputs** or **Open exports** in the Details panel to open these folders.
 </StepBlock>
 
 **Common issues**
-- **Pipeline fails or hangs** — Check that Python and required dependencies (ffmpeg, faster-whisper, openai) are installed and on your PATH. You can set <code>PYTHON_PATH</code> to the full path of your Python executable. The app tries to use a conda environment named <code>yt-gpu</code> if present. Review <code>yt_pipeline/outputs/Reports/last_run.log</code> and the in-app Pipeline Log for the exact error.
-- **Output location** — Outputs are written to <code>yt_pipeline/outputs</code> next to the app (or your configured pipeline root).
+- **Pipeline fails or hangs** — Open **Show technical log** for the row and retry once. Make sure the video file is accessible and you have free disk space. If the issue persists, share the technical log with support.
+- **Output location** — Outputs are written to your **Outputs folder** (configurable in **Settings → Developer mode**).
 - **All selected already have metadata** — The app only runs the pipeline for rows that lack metadata for the platforms you requested. To regenerate, delete metadata for that platform (or file) first, or use the per-platform **Generate** in Details for the missing platform.
 
 <NextLinks prev={{ slug: "add-files-jobs", label: "Add Files & Jobs" }} next={{ slug: "presets", label: "Presets" }} />
