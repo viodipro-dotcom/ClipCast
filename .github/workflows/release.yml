@@ -89,6 +89,46 @@ jobs:
           if (-not (Test-Path vendor\bin\ffmpeg.exe)) { throw "ffmpeg.exe missing after copy" }
           if (-not (Test-Path vendor\bin\ffprobe.exe)) { throw "ffprobe.exe missing after copy" }
 
+      - name: Setup Miniconda (CUDA DLLs)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniconda-version: "latest"
+          auto-activate-base: false
+
+      - name: Install CUDA runtime DLLs (Conda)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $envName = "cuda-dlls"
+          Write-Host "==> Create conda env: $envName"
+          conda create -y -n $envName -c conda-forge cudatoolkit=12
+          Write-Host "==> Attempt to install cuDNN (optional)"
+          try {
+            conda install -y -n $envName -c conda-forge cudnn=8
+          } catch {
+            Write-Host "cudnn install failed or unavailable; continuing"
+          }
+          $envs = conda env list --json | ConvertFrom-Json
+          $envPath = $envs.envs | Where-Object { $_ -match "\\$envName$" } | Select-Object -First 1
+          if (-not $envPath) { throw "Conda env path for $envName not found" }
+          "CONDA_PREFIX=$envPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          Write-Host "CONDA_PREFIX set to $envPath"
+          $requiredDlls = @("cublas64_12.dll","cublasLt64_12.dll","cudart64_12.dll")
+          $missing = @()
+          foreach ($dll in $requiredDlls) {
+            $dllPath = Join-Path $envPath "Library\\bin\\$dll"
+            if (-not (Test-Path $dllPath)) { $missing += $dll }
+          }
+          if ($missing.Count -gt 0) {
+            throw ("Missing required CUDA DLLs in conda env: " + ($missing -join ", "))
+          }
+          $cudnnPath = Join-Path $envPath "Library\\bin\\cudnn64_8.dll"
+          if (Test-Path $cudnnPath) {
+            Write-Host "Found cudnn64_8.dll"
+          } else {
+            Write-Host "cudnn64_8.dll not found (optional)"
+          }
+
       - name: Build
         run: npm run build
 
