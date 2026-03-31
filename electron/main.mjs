@@ -48,7 +48,6 @@ function configureUserDataPath() {
 }
 
 configureUserDataPath();
-applyHardwareAccelerationPolicy();
 
 const PROTOCOL_SCHEME = 'clipcast';
 
@@ -644,6 +643,8 @@ function recordGpuProcessIssue(kind, details) {
   }
   setHardwareAccelerationConfig(next);
 }
+
+applyHardwareAccelerationPolicy();
 
 function getUpdaterConfig() {
   const cfg = loadAppConfig();
