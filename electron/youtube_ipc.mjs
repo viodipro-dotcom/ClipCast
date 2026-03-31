@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import electron from 'electron';
 import { connect, isConnected, uploadVideo, loadClientCredentials } from './youtube.mjs';
-import { redactSecrets } from './secrets.mjs';
+import { getBundledGoogleOAuthClientPathCandidates, redactSecrets } from './secrets.mjs';
 
 const { app, shell } = electron;
 
@@ -117,6 +117,8 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         const errorMessage = redactSecrets(String(e?.message || e));
         const missingMessage =
           'YouTube connection is not available yet on this device. Please try again or contact support.';
+        const bundledCandidates = getBundledGoogleOAuthClientPathCandidates();
+        const expectedBundledPath = bundledCandidates.length ? bundledCandidates[0] : '';
         const isMissingClient = errorMessage.includes('OAUTH_CLIENT_MISSING');
 
         return {
@@ -125,9 +127,12 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
           error: errorMessage,
           filePath: credsPath,
           fileExists,
+          expectedBundledPath,
           message: fileExists
             ? `Credentials found but invalid: ${errorMessage}`
-            : (isMissingClient ? missingMessage : (errorMessage || missingMessage)),
+            : (isMissingClient
+              ? `Bundled OAuth client missing. Expected file at: ${expectedBundledPath || 'resources/assets/oauth/google_oauth_client.json'}`
+              : (errorMessage || missingMessage)),
         };
       }
     });

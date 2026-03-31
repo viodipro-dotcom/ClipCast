@@ -7,8 +7,23 @@ export default function UpdateBanner() {
   const [dismissed, setDismissed] = React.useState(false);
 
   React.useEffect(() => {
+    let mounted = true;
     const off = window.api?.onUpdateStatus?.((s: UpdateStatus) => setStatus(s));
-    return () => off?.();
+    const loadInitialStatus = async () => {
+      try {
+        const initial = await window.api?.updateGetStatus?.();
+        if (mounted && initial) {
+          setStatus(initial);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    void loadInitialStatus();
+    return () => {
+      mounted = false;
+      off?.();
+    };
   }, []);
 
   if (!status || status.disabled) return null;

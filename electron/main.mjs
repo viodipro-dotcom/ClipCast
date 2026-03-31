@@ -48,6 +48,7 @@ function configureUserDataPath() {
 }
 
 configureUserDataPath();
+applyHardwareAccelerationPolicy();
 
 const PROTOCOL_SCHEME = 'clipcast';
 
@@ -69,12 +70,34 @@ let computeBackendCacheMeta = {
 const COMPUTE_BACKEND_REPROBE_COOLDOWN_MS = 10 * 60 * 1000;
 let batchNotificationTimer = null;
 
+const GPU_LOG_NAME = 'gpu_diagnostics.log';
+const GPU_CRASH_TRACK_WINDOW_MS = 10 * 60 * 1000;
+const GPU_CRASH_DISABLE_THRESHOLD = 2;
+
 process.on('unhandledRejection', (reason) => {
   try {
     console.warn('[main] unhandledRejection', reason);
   } catch {
     // ignore
   }
+});
+
+app.on('child-process-gone', (_event, details) => {
+  if (details?.type !== 'GPU') return;
+  const payload = {
+    type: details?.type,
+    reason: details?.reason,
+    exitCode: details?.exitCode,
+    serviceName: details?.serviceName,
+  };
+  console.warn('[gpu] child-process-gone', payload);
+  recordGpuProcessIssue('child-process-gone', payload);
+});
+
+app.on('gpu-process-crashed', (_event, killed) => {
+  const payload = { killed: Boolean(killed) };
+  console.warn('[gpu] gpu-process-crashed', payload);
+  recordGpuProcessIssue('gpu-process-crashed', payload);
 });
 
 const RENDERER_ERROR_LOG_NAME = 'renderer_errors.log';
@@ -542,6 +565,84 @@ function saveAppConfig(config) {
     console.error('[main] Error saving app config:', e);
     return false;
   }
+}
+
+const DEFAULT_HARDWARE_ACCEL_CONFIG = {
+  disabled: false,
+  reason: null,
+  lastChangedAtMs: 0,
+  gpuCrashCount: 0,
+  lastGpuCrashAtMs: 0,
+  lastIssue: null,
+};
+
+function getHardwareAccelerationConfig() {
+  const cfg = loadAppConfig();
+  const raw = cfg?.hardwareAcceleration;
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_HARDWARE_ACCEL_CONFIG };
+  return {
+    ...DEFAULT_HARDWARE_ACCEL_CONFIG,
+    ...raw,
+  };
+}
+
+function setHardwareAccelerationConfig(next) {
+  saveAppConfig({ hardwareAcceleration: next });
+  return next;
+}
+
+function writeGpuDiagnosticsLog(event, details) {
+  try {
+    const userData = app.getPath('userData');
+    const logDir = path.join(userData, 'logs');
+    safeMkdir(logDir);
+    const logPath = path.join(logDir, GPU_LOG_NAME);
+    const entry = {
+      timestamp: new Date().toISOString(),
+      event,
+      details,
+      appVersion: app.getVersion?.() || 'unknown',
+    };
+    fs.appendFileSync(logPath, `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch {
+    // ignore
+  }
+}
+
+function applyHardwareAccelerationPolicy() {
+  const cfg = getHardwareAccelerationConfig();
+  if (cfg.disabled) {
+    try {
+      app.disableHardwareAcceleration();
+      app.commandLine.appendSwitch('disable-gpu');
+    } catch {
+      // ignore
+    }
+    console.warn('[gpu] Hardware acceleration disabled by config:', cfg.reason || 'unknown');
+    writeGpuDiagnosticsLog('hardware-acceleration-disabled', { reason: cfg.reason || 'unknown' });
+  }
+}
+
+function recordGpuProcessIssue(kind, details) {
+  const now = Date.now();
+  const current = getHardwareAccelerationConfig();
+  const last = Number(current.lastGpuCrashAtMs || 0);
+  const withinWindow = last && now - last <= GPU_CRASH_TRACK_WINDOW_MS;
+  const nextCrashCount = withinWindow ? Number(current.gpuCrashCount || 0) + 1 : 1;
+  const next = {
+    ...current,
+    gpuCrashCount: nextCrashCount,
+    lastGpuCrashAtMs: now,
+    lastIssue: kind,
+  };
+  writeGpuDiagnosticsLog(kind, details);
+  if (!current.disabled && nextCrashCount >= GPU_CRASH_DISABLE_THRESHOLD) {
+    next.disabled = true;
+    next.reason = `auto_disabled_after_${nextCrashCount}_gpu_events`;
+    next.lastChangedAtMs = now;
+    console.warn('[gpu] Disabling hardware acceleration on next launch (GPU instability detected).');
+  }
+  setHardwareAccelerationConfig(next);
 }
 
 function getUpdaterConfig() {

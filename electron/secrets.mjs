@@ -170,7 +170,7 @@ function extractLegacyGoogleOAuthClient(data) {
   return { clientId, ...(clientSecret ? { clientSecret } : {}) };
 }
 
-function resolveBundledGoogleOAuthClientPath() {
+function buildBundledGoogleOAuthClientPathCandidates() {
   const candidates = [];
   if (app?.isPackaged && process.resourcesPath) {
     candidates.push(path.join(process.resourcesPath, 'assets', 'oauth', 'google_oauth_client.json'));
@@ -181,10 +181,19 @@ function resolveBundledGoogleOAuthClientPath() {
     candidates.push(path.join(appPath, 'assets', 'oauth', 'google_oauth_client.json'));
   }
   candidates.push(path.join(process.cwd(), 'assets', 'oauth', 'google_oauth_client.json'));
+  return candidates.filter(Boolean);
+}
+
+function resolveBundledGoogleOAuthClientPath() {
+  const candidates = buildBundledGoogleOAuthClientPathCandidates();
   for (const candidate of candidates) {
     if (candidate && fs.existsSync(candidate)) return candidate;
   }
   return null;
+}
+
+export function getBundledGoogleOAuthClientPathCandidates() {
+  return buildBundledGoogleOAuthClientPathCandidates();
 }
 
 export async function getBundledGoogleOAuthClient({ log } = {}) {

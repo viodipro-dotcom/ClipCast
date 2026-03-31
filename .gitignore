@@ -35,6 +35,7 @@ lerna-debug.log*
 .env.*
 **/.env
 **/.env.*
+assets/oauth/google_oauth_client.json
 
 
 ########################################
