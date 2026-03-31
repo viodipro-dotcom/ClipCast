@@ -90,14 +90,17 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         const fileExists = fs.existsSync(credsPath);
         const sourceLabel =
           creds?.source === 'env'
-            ? 'environment variables'
+            ? 'local override (environment variables)'
             : creds?.source === 'legacy'
               ? 'legacy file (migrated to OS keychain)'
-              : 'OS keychain';
+              : creds?.source === 'bundled'
+                ? 'bundled app client'
+                : 'OS keychain';
         
         return {
           ok: true,
           hasCredentials: true,
+          source: creds?.source || null,
           clientIdPrefix: creds.clientId.slice(0, 30) + '...',
           clientIdValid: creds.clientId.includes('.apps.googleusercontent.com'),
           filePath: credsPath,
@@ -113,7 +116,8 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         
         const errorMessage = redactSecrets(String(e?.message || e));
         const missingMessage =
-          'Google OAuth client is not configured on this device. Open Settings > Developer mode to add credentials.';
+          'YouTube connection is not available yet on this device. Please try again or contact support.';
+        const isMissingClient = errorMessage.includes('OAUTH_CLIENT_MISSING');
 
         return {
           ok: false,
@@ -123,7 +127,7 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
           fileExists,
           message: fileExists
             ? `Credentials found but invalid: ${errorMessage}`
-            : errorMessage || missingMessage,
+            : (isMissingClient ? missingMessage : (errorMessage || missingMessage)),
         };
       }
     });

@@ -170,6 +170,34 @@ function extractLegacyGoogleOAuthClient(data) {
   return { clientId, ...(clientSecret ? { clientSecret } : {}) };
 }
 
+function resolveBundledGoogleOAuthClientPath() {
+  const candidates = [];
+  if (app?.isPackaged && process.resourcesPath) {
+    candidates.push(path.join(process.resourcesPath, 'assets', 'oauth', 'google_oauth_client.json'));
+    candidates.push(path.join(process.resourcesPath, 'oauth', 'google_oauth_client.json'));
+  }
+  const appPath = typeof app?.getAppPath === 'function' ? app.getAppPath() : '';
+  if (appPath) {
+    candidates.push(path.join(appPath, 'assets', 'oauth', 'google_oauth_client.json'));
+  }
+  candidates.push(path.join(process.cwd(), 'assets', 'oauth', 'google_oauth_client.json'));
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+export async function getBundledGoogleOAuthClient({ log } = {}) {
+  const logger = typeof log === 'function' ? log : null;
+  const filePath = resolveBundledGoogleOAuthClientPath();
+  if (!filePath) return null;
+  const data = safeReadJson(filePath, null);
+  const parsed = extractLegacyGoogleOAuthClient(data);
+  if (!parsed?.clientId) return null;
+  if (logger) logger('[secrets] loaded bundled Google OAuth client');
+  return { ...parsed, source: 'bundled', filePath };
+}
+
 async function migrateLegacyGoogleOAuthClient({ log } = {}) {
   const logger = typeof log === 'function' ? log : console.log;
   const userDataDir = app.getPath('userData');

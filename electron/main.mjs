@@ -60,6 +60,13 @@ let setAssistOverlayWindowFn = null;
 let refreshAssistOverlayStateFn = null;
 let setYouTubeWindowFn = null;
 let computeBackendCache = null;
+let computeBackendCacheMeta = {
+  lastProbeAtMs: 0,
+  lastProbeFailed: false,
+  lastProbeReason: null,
+  lastProbeSource: null,
+};
+const COMPUTE_BACKEND_REPROBE_COOLDOWN_MS = 10 * 60 * 1000;
 let batchNotificationTimer = null;
 
 process.on('unhandledRejection', (reason) => {
@@ -900,6 +907,20 @@ async function detectComputeBackend(opts = {}) {
     } else {
       const reason = smoke?.data?.reason || smoke?.error || 'cuda_smoke_failed';
       logWarn('CUDA smoke test failed', { reason });
+      if (smoke?.data) {
+        logWarn('CUDA smoke test diagnostics', {
+          deviceCount: smoke.data.cuda_device_count ?? null,
+          deviceCountRaw: smoke.data.cuda_device_count_raw ?? null,
+          deviceQueryError: smoke.data.cuda_device_query_error || undefined,
+          supportedComputeTypes: smoke.data.supported_compute_types || [],
+          supportedComputeTypesError: smoke.data.supported_compute_types_error || undefined,
+        });
+      }
+      if (reason === 'no_cuda_device') {
+        logWarn('GPU detected but CUDA device count = 0', {
+          deviceCount: smoke?.data?.cuda_device_count ?? null,
+        });
+      }
     }
     if (smoke?.data?.inference_test) {
       logInfo('CUDA inference smoke test', {
@@ -947,10 +968,47 @@ async function detectComputeBackend(opts = {}) {
   };
 }
 
+function shouldSkipComputeBackendProbe(opts = {}) {
+  if (!computeBackendCache) return false;
+  const forceRefresh = Boolean(opts.forceRefresh);
+  if (!forceRefresh) return true;
+  const userInitiated = Boolean(opts.userInitiated);
+  if (userInitiated) return false;
+  if (computeBackendCacheMeta?.lastProbeFailed) return true;
+  const lastProbeAtMs = Number(computeBackendCacheMeta?.lastProbeAtMs || 0);
+  if (lastProbeAtMs && Date.now() - lastProbeAtMs < COMPUTE_BACKEND_REPROBE_COOLDOWN_MS) {
+    return true;
+  }
+  return false;
+}
+
+function recordComputeBackendProbe(result, opts = {}, error = null) {
+  const failed = Boolean(error) || !Boolean(result?.availableGpu);
+  const reason =
+    (result?.details && result.details.cuda_smoke && result.details.cuda_smoke.reason)
+      || result?.error
+      || (typeof error === 'string' ? error : (error ? String(error) : null));
+  computeBackendCacheMeta = {
+    lastProbeAtMs: Date.now(),
+    lastProbeFailed: failed,
+    lastProbeReason: reason || null,
+    lastProbeSource: typeof opts.source === 'string' ? opts.source : null,
+  };
+}
+
 async function getComputeBackend(opts = {}) {
-  if (computeBackendCache && !opts.forceRefresh) return computeBackendCache;
+  const logFn = typeof opts.log === 'function' ? opts.log : null;
+  const logInfo = (message, keys = {}) => logFn && logFn('INFO', 'compute', message, keys);
+  if (shouldSkipComputeBackendProbe(opts)) {
+    logInfo('Compute backend probe skipped', {
+      reason: computeBackendCacheMeta?.lastProbeReason || 'cached',
+      source: computeBackendCacheMeta?.lastProbeSource || 'unknown',
+    });
+    return computeBackendCache;
+  }
   try {
     computeBackendCache = await detectComputeBackend(opts);
+    recordComputeBackendProbe(computeBackendCache, opts, null);
   } catch (e) {
     computeBackendCache = {
       availableGpu: false,
@@ -958,13 +1016,14 @@ async function getComputeBackend(opts = {}) {
       error: String(e),
       pythonPath: getPipelinePythonPath(),
     };
+    recordComputeBackendProbe(computeBackendCache, opts, e);
   }
   return computeBackendCache;
 }
 
 async function refreshComputeBackend() {
   computeBackendCache = null;
-  return await getComputeBackend({ forceRefresh: true });
+  return await getComputeBackend({ forceRefresh: true, userInitiated: true, source: 'developer_refresh' });
 }
 
 /** Returns the configured outputs base directory (absolute). Ensures it exists. */
@@ -3621,7 +3680,7 @@ ipcMain.handle('pipeline:runPipeline', async (_event, payload) => {
     effectiveDevice = 'cpu';
   } else {
     try {
-      computeInfo = await getComputeBackend({ forceRefresh: true, log });
+      computeInfo = await getComputeBackend({ forceRefresh: true, log, source: 'pipeline' });
     } catch (e) {
       computeInfo = null;
       fallbackReason = String(e);

@@ -534,7 +534,7 @@
   "credentialsValidationFailedWithMessage": "⚠️ {{message}}",
   "youtubeConnectedSuccess": "YouTube conectat cu succes!",
   "youtubeConnectFailedDefault": "Conectarea YouTube a eșuat",
-  "oauthCredentialsMissing": "⚠️ Clientul Google OAuth nu este configurat pe acest dispozitiv. Deschide Setări > Developer mode pentru a adăuga credențialele.",
+  "oauthCredentialsMissing": "⚠️ Conectarea YouTube nu este disponibilă încă pe acest dispozitiv. Încearcă din nou sau contactează suportul.",
   "oauthInvalidClientHelp": "❌ Eroare 401: invalid_client. Verifică: 1) Tip client OAuth = „Desktop app” (NU „Web application”), 2) Client ID/Secret copiate complet, 3) YouTube Data API v3 activat, 4) Ecranul de consimțământ OAuth configurat. Vezi GOOGLE_OAUTH_SETUP.md",
   "youtubeConnectFailedWithMessage": "Conectarea YouTube a eșuat: {{message}}",
   "retryingPipelineCount": "Se reîncearcă pipeline pentru {{count}} element(e)",

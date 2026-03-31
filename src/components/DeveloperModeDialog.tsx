@@ -159,11 +159,6 @@ export default function DeveloperModeDialog({
     }
   }, [open, loadOutputsPath, loadDeveloperOptions]);
 
-  const handleComputeBackendPreferenceChange = (value: 'auto' | 'prefer_gpu' | 'force_cpu') => {
-    setComputeBackendPreference(value);
-    window.api?.setDeveloperOptions?.({ computeBackendPreference: value });
-  };
-
   const handleComputeBackendRefresh = async () => {
     try {
       setComputeBackendLoading(true);
@@ -176,6 +171,12 @@ export default function DeveloperModeDialog({
     } finally {
       setComputeBackendLoading(false);
     }
+  };
+
+  const handleComputeBackendPreferenceChange = (value: 'auto' | 'prefer_gpu' | 'force_cpu') => {
+    setComputeBackendPreference(value);
+    window.api?.setDeveloperOptions?.({ computeBackendPreference: value });
+    handleComputeBackendRefresh();
   };
 
   const savePythonPath = async (value: string) => {
@@ -394,7 +395,7 @@ export default function DeveloperModeDialog({
       missing_cublas: 'missing cuBLAS DLL',
       missing_cudart: 'missing CUDA runtime DLL',
       missing_dll: 'missing CUDA DLL',
-      no_cuda_device: 'no CUDA device',
+      no_cuda_device: 'GPU detected, but no usable CUDA device from the current driver/runtime. Falling back to CPU. Update NVIDIA driver for CUDA 12 support.',
       cuda_no_float16: 'float16 not supported',
       cuda_unavailable: 'CUDA unavailable',
       cuda_probe_failed: 'CUDA probe failed',

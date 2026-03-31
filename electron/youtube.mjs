@@ -4,7 +4,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { google } from 'googleapis';
-import { getGoogleOAuthClientWithFallback, getYouTubeTokens, redactSecrets, setYouTubeTokens } from './secrets.mjs';
+import {
+  getBundledGoogleOAuthClient,
+  getGoogleOAuthClientWithFallback,
+  getYouTubeTokens,
+  redactSecrets,
+  setYouTubeTokens,
+} from './secrets.mjs';
 
 const { app, shell } = electron;
 
@@ -35,6 +41,8 @@ function parseTags(input) {
 
 let cachedTokens = null;
 let tokensLoaded = false;
+
+const OAUTH_CLIENT_MISSING_CODE = 'OAUTH_CLIENT_MISSING';
 
 async function loadTokensFromKeytar() {
   if (tokensLoaded) return cachedTokens;
@@ -85,9 +93,17 @@ export async function loadClientCredentials() {
     throw new Error('Missing Google OAuth client secret. Re-enter credentials in app settings.');
   }
 
-  throw new Error(
-    'Google OAuth client is not configured on this device. Open Settings to add credentials or set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET.',
-  );
+  const bundled = await getBundledGoogleOAuthClient();
+  if (bundled?.clientId && bundled?.clientSecret) {
+    if (!bundled.clientId.includes('.apps.googleusercontent.com') && !bundled.clientId.includes('@')) {
+      throw new Error(
+        `Invalid Client ID format. Expected format: numbers-letters.apps.googleusercontent.com. Got: ${bundled.clientId.slice(0, 50)}...`,
+      );
+    }
+    return { clientId: bundled.clientId, clientSecret: bundled.clientSecret, source: 'bundled' };
+  }
+
+  throw new Error(OAUTH_CLIENT_MISSING_CODE);
 }
 
 export async function isConnected() {

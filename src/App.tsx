@@ -9840,7 +9840,7 @@ const add = async () => {
                     } catch (e: any) {
                       console.error(e);
                       const msg = String(e?.message || e || t('youtubeConnectFailedDefault'));
-                      if (msg.includes('Missing Google OAuth credentials')) {
+                      if (msg.includes('OAUTH_CLIENT_MISSING')) {
                         setSnack(t('oauthCredentialsMissing'));
                       } else if (msg.includes('invalid_client') || msg.includes('401')) {
                         setSnack(t('oauthInvalidClientHelp'));

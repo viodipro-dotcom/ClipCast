@@ -43,7 +43,11 @@ def main() -> int:
         "platform": platform.platform(),
         "ctranslate2_version": None,
         "cuda_device_count": 0,
+        "cuda_device_count_raw": None,
+        "cuda_device_query_error": None,
         "supported_compute_types": [],
+        "supported_compute_types_error": None,
+        "cuda_visible_devices": os.getenv("CUDA_VISIBLE_DEVICES"),
         "dll_check": {
             "status": "skipped",
             "missing": [],
@@ -72,14 +76,32 @@ def main() -> int:
             return _print_and_exit(result, started)
 
         result["ctranslate2_version"] = getattr(ctranslate2, "__version__", None)
-        count = int(ctranslate2.get_cuda_device_count() or 0)
+        try:
+            raw_count = ctranslate2.get_cuda_device_count()
+        except Exception as exc:
+            msg = f"{type(exc).__name__}: {exc}"
+            result["cuda_device_query_error"] = msg
+            result["error"] = msg
+            result["reason"] = _classify_error(msg)
+            return _print_and_exit(result, started)
+        result["cuda_device_count_raw"] = raw_count
+        count = int(raw_count or 0)
         result["cuda_device_count"] = count
+
+        try:
+            supported = _safe_list(ctranslate2.get_supported_compute_types("cuda"))
+        except Exception as exc:
+            msg = f"{type(exc).__name__}: {exc}"
+            result["supported_compute_types_error"] = msg
+            supported = []
+        result["supported_compute_types"] = supported
+
         if count <= 0:
+            if not result.get("error"):
+                result["error"] = "CUDA device count returned 0"
             result["reason"] = "no_cuda_device"
             return _print_and_exit(result, started)
 
-        supported = _safe_list(ctranslate2.get_supported_compute_types("cuda"))
-        result["supported_compute_types"] = supported
         if "float16" not in [s.lower() for s in supported]:
             result["reason"] = "cuda_no_float16"
             return _print_and_exit(result, started)
