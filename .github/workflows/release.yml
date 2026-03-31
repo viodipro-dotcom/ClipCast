@@ -35,6 +35,26 @@ jobs:
           Write-Host "VITE_SUPABASE_URL is set: $hasUrl"
           Write-Host "VITE_SUPABASE_ANON_KEY is set: $hasKey"
 
+      - name: Prepare bundled Google OAuth client (YouTube)
+        shell: pwsh
+        env:
+          YT_OAUTH_CLIENT_JSON: ${{ secrets.YT_OAUTH_CLIENT_JSON }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ([string]::IsNullOrWhiteSpace($env:YT_OAUTH_CLIENT_JSON)) {
+            throw "Missing secret YT_OAUTH_CLIENT_JSON"
+          }
+          $outDir = "assets\\oauth"
+          $outPath = Join-Path $outDir "google_oauth_client.json"
+          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+          $env:YT_OAUTH_CLIENT_JSON | Out-File -FilePath $outPath -Encoding utf8
+          if (-not (Test-Path $outPath)) { throw "Failed to write $outPath" }
+          $json = Get-Content $outPath -Raw | ConvertFrom-Json
+          if (-not $json.installed.client_id -or -not $json.installed.client_secret) {
+            throw "Invalid OAuth JSON: expected installed.client_id and installed.client_secret"
+          }
+          Write-Host "Bundled OAuth client written to $outPath"
+
       - name: Prepare bundled Python runtime
         shell: pwsh
         run: |
