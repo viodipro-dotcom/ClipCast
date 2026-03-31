@@ -5,43 +5,138 @@ description: Fix common issues and errors.
 
 <DocPage title="Troubleshooting" description="Fix common issues and errors.">
 
-How to fix common issues based on the app’s actual behavior.
+If something is not working as expected, start with the symptom you see below.
 
-<StepBlock title="Step 1 — Generate Metadata (pipeline) fails" imageSrc="/docs/images/troubleshooting/01-pipeline-log.jpg" imageAlt="Pipeline Log" caption="Screenshot 01 — Details panel: Activity and Show technical log">
-If **Generate Metadata** fails, the app shows: *"Metadata generation failed (code: X). Check Technical Log for details."*  
-**What to do:** Select the row, open the **Details** panel, and click **Show technical log** in the **Activity** section to see the error for that file.  
-If it still fails, retry once and make sure the video file is accessible and you have free disk space. If needed, share the technical log with support.
-</StepBlock>
+## Generate Metadata does not start or fails
 
-<StepBlock title="Step 2 — YouTube connection fails" imageSrc="/docs/images/troubleshooting/02-youtube-connect.jpg" imageAlt="Connect YouTube" caption="Screenshot 02 — Connect YouTube and OAuth setup">
-If **Connect YouTube** fails:  
-- **"OAuth credentials missing"** — Follow **YouTube Connect &amp; Upload** to set up credentials. **Advanced:** If you manage your own OAuth credentials, add them via **Settings → Developer mode → Open User Data**.  
-- **Error 401 / invalid_client** — Use an OAuth client type **Desktop app** (not Web application), copy Client ID and Secret fully, enable **YouTube Data API v3**, and configure the OAuth consent screen. See **YouTube Connect &amp; Upload** for the setup checklist.  
-Use **Test connection** and **Reconnect** from the **YouTube chip** in the command bar (click the YouTube status) to verify credentials.
-</StepBlock>
+Try these steps:
 
-<StepBlock title="Step 3 — File missing on disk">
-If a row shows **"File missing on disk. Re-import or remove this row."** (status **Error** in the Details **Activity** / technical log), the file was moved, renamed, or deleted. **Remove** that row from the table, then add the video again from its **new location**: use **Add (Files or Folder)** in the toolbar to open the **Add Videos** dialog and choose **Add Files** or **Add Folder**.
-</StepBlock>
+1. Make sure the video file still exists in the same location.
+2. Open the row details and check the technical log for the latest error.
+3. Try again with one short video file to confirm whether the issue affects all files or only one.
+4. If the problem continues, restart ClipCast and try again.
 
-<StepBlock title="Step 4 — Upload failed">
-If upload fails, check the **Activity** section in the **Details** panel and **Show technical log** for the selected row. Use **Retry upload** (for selected failed items) to try again. For YouTube quota issues, wait and retry later. Ensure **YouTube** is connected (Connect YouTube in the toolbar or Settings) and credentials are valid.
-</StepBlock>
+If ClipCast still cannot generate metadata, send the technical log to support.
 
-<StepBlock title="Step 5 — GPU detected, but ClipCast still uses CPU">
-ClipCast may detect your NVIDIA GPU, but still fall back to CPU if no usable CUDA device is exposed by the current driver/runtime. GPU mode requires an NVIDIA GPU and a **recent NVIDIA driver** compatible with our CUDA 12.x stack.  
-**Check:** Open **Developer Mode**, review **Selected device**, **CUDA smoke test**, and **Fallback reason**. Run <code>nvidia-smi</code>.  
-If the driver is too old, **update the NVIDIA driver**, restart the PC, and test again. If GPU mode is unavailable, ClipCast falls back to CPU automatically.
-</StepBlock>
+---
 
-<StepBlock title="Step 6 — App won't start" imageSrc="/docs/images/troubleshooting/05-app-wont-start.jpg" imageAlt="Main window" caption="Screenshot 05 — Visual C++ (Windows) or Security (macOS)">
-On **Windows**, install the latest **Visual C++ redistributable**. On **macOS**, if the app is blocked, go to **System Preferences → Security &amp; Privacy** and allow the app.
-</StepBlock>
+## ClipCast uses CPU even though your laptop has an NVIDIA GPU
 
-**Common tools in the app**
-- **Show technical log** — In the **Details** panel when a row is selected: **Activity** section → **Show technical log**. Shows the log for that row (including pipeline and upload messages).
-- **Developer mode** — In the **Settings** (gear) menu: advanced tools like **Open User Data** and **Open outputs**.
-- **Diagnostics** — In the **Settings** (gear) menu: shows **Connections**, **Auto Upload**, **Jobs**, and **System info** for support.
+ClipCast may detect your NVIDIA GPU but still fall back to CPU if no usable CUDA device is exposed by the current driver or runtime.
+
+Try this:
+
+1. Open **Developer Mode**.
+2. Click **Refresh** in the **Compute backend** section.
+3. Check:
+   - **Selected device**
+   - **CUDA smoke test**
+   - **Fallback reason**
+4. Run `nvidia-smi` in Windows Command Prompt.
+5. Update your NVIDIA driver if it is old.
+6. Restart your PC and test again.
+
+If GPU mode is not available, ClipCast will fall back to CPU automatically so you can still continue working.
+
+---
+
+## YouTube connection fails
+
+Try these steps:
+
+1. Open **Settings** and reconnect your YouTube account.
+2. Make sure you are signing in with the correct Google account.
+3. Close ClipCast completely, open it again, and retry the connection.
+4. If the connection still fails, remove the saved connection and connect again from scratch.
+
+If the issue continues, contact support and include the technical log.
+
+---
+
+## A file is missing or a row does not work anymore
+
+This usually means the original file was moved, renamed, deleted, or is on a disconnected drive.
+
+Try this:
+
+1. Check that the original file still exists.
+2. If the file was moved, add it again to ClipCast.
+3. If an external drive was used, reconnect the drive and retry.
+
+---
+
+## Upload or publish action does not work
+
+Try these checks:
+
+1. Make sure you are signed in to the correct platform account.
+2. Confirm your internet connection is stable.
+3. Check whether the selected row has all required metadata and media ready.
+4. If you use Manual Assist, open the Assist Center and retry from there.
+
+If it still fails, open the technical log and send it to support.
+
+---
+
+## Manual Assist Center does not show the expected item
+
+Try this:
+
+1. Make sure the row really has a scheduled assist or publish action.
+2. Open the **Manual Assist Center** again from the tray.
+3. Wait a few seconds for the list to refresh.
+4. If needed, close and reopen the app once.
+
+If the item still does not appear, send the technical log to support.
+
+---
+
+## ClipCast starts but something feels stuck or out of date
+
+Try this:
+
+1. Close and reopen the app.
+2. Check whether an app update is available.
+3. Retry the action with one test file first.
+4. Open the technical log to see the latest error or warning.
+
+---
+
+## ClipCast does not start
+
+Try these steps:
+
+1. Restart your PC.
+2. Open ClipCast again.
+3. If Windows blocked part of the install, reinstall the latest version.
+4. If it still does not open, contact support and include any error message you see.
+
+---
+
+## Useful tools inside ClipCast
+
+### Technical log
+Use the technical log when a row fails or a step stops unexpectedly.  
+This is the best thing to attach when contacting support.
+
+### Developer Mode
+Developer Mode helps you check:
+- which compute mode is active
+- whether ClipCast is using CPU or CUDA
+- whether a fallback reason was detected
+
+You do not need Developer Mode for normal daily use, but it is useful for troubleshooting.
+
+---
+
+## Still stuck?
+
+If the problem continues after the steps above, contact support and include:
+
+- what you were trying to do
+- what happened instead
+- a screenshot, if possible
+- the technical log
 
 <NextLinks prev={{ slug: "settings", label: "Settings" }} next={{ slug: "faq", label: "FAQ" }} />
 
