@@ -26,7 +26,7 @@ type LimitMap = Record<
 type PostgrestErrorLike = { code?: string; message?: string };
 
 const FALLBACK_LIMITS: LimitMap = {
-  try_free: { uploadsLimit: 5, metadataLimit: 15 },
+  try_free: { uploadsLimit: 20, metadataLimit: 30 },
   basic: { uploadsLimit: 50, metadataLimit: 150 },
   pro: { uploadsLimit: 200, metadataLimit: 400 },
   pro_plus: { uploadsLimit: 500, metadataLimit: 1000 },

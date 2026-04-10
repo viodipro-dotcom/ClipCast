@@ -50,6 +50,9 @@ function configureUserDataPath() {
 configureUserDataPath();
 
 const PROTOCOL_SCHEME = 'clipcast';
+const STARTUP_ARG = '--autostart';
+const STARTUP_ARGS = [STARTUP_ARG];
+const isAutoStartLaunch = process.argv.includes(STARTUP_ARG);
 
 let mainWindow = null;
 let tray = null;
@@ -1609,7 +1612,7 @@ function collectVideoFiles(rootDir) {
   return Array.from(new Set(out));
 }
 
-async function createWindow() {
+async function createWindow({ startHidden = false } = {}) {
   const preloadPath = path.join(__dirname, 'preload.cjs');
   const isGuideScreenshots = process.env.GENERATE_GUIDE === '1';
 
@@ -1618,6 +1621,7 @@ async function createWindow() {
     height: isGuideScreenshots ? 1080 : 900,
     x: isGuideScreenshots ? 0 : undefined,
     y: isGuideScreenshots ? 0 : undefined,
+    show: !startHidden,
     fullscreen: false,
     fullscreenable: !isGuideScreenshots,
     maximizable: !isGuideScreenshots,
@@ -2014,16 +2018,17 @@ async function initIpcHandlers() {
 
   function loadUiSettings() {
     try {
-      if (!fs.existsSync(uiSettingsFile)) return { uiLanguage: 'en' };
+      if (!fs.existsSync(uiSettingsFile)) return { uiLanguage: 'en', runAtStartup: false };
       const data = fs.readFileSync(uiSettingsFile, 'utf8');
       const parsed = JSON.parse(data);
       return {
         uiLanguage: typeof parsed?.uiLanguage === 'string' ? parsed.uiLanguage : 'en',
         uiLanguageLabel: typeof parsed?.uiLanguageLabel === 'string' ? parsed.uiLanguageLabel : undefined,
+        runAtStartup: typeof parsed?.runAtStartup === 'boolean' ? parsed.runAtStartup : false,
       };
     } catch (e) {
       console.error('[main] Error loading UI settings:', e);
-      return { uiLanguage: 'en' };
+      return { uiLanguage: 'en', runAtStartup: false };
     }
   }
 
@@ -2038,15 +2043,58 @@ async function initIpcHandlers() {
     }
   }
 
+  function getRunAtStartupStatus() {
+    if (process.platform !== 'win32') return null;
+    try {
+      const status = app.getLoginItemSettings({ args: STARTUP_ARGS });
+      return Boolean(status?.openAtLogin);
+    } catch (e) {
+      console.warn('[main] Failed to read startup setting:', e);
+      return null;
+    }
+  }
+
+  function applyRunAtStartupSetting(enabled) {
+    if (process.platform !== 'win32') {
+      return { ok: false, error: 'unsupported' };
+    }
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: enabled,
+        args: STARTUP_ARGS,
+        enabled,
+      });
+      return { ok: true, enabled };
+    } catch (e) {
+      console.warn('[main] Failed to update startup setting:', e);
+      return { ok: false, error: String(e?.message || e) };
+    }
+  }
+
   ipcMain.handle('settings:get', () => {
-    return loadUiSettings();
+    const settings = loadUiSettings();
+    const detected = getRunAtStartupStatus();
+    if (typeof detected === 'boolean' && detected !== settings.runAtStartup) {
+      settings.runAtStartup = detected;
+      saveUiSettings(settings);
+    }
+    return settings;
   });
 
   ipcMain.handle('settings:set', (_e, payload) => {
     const current = loadUiSettings();
+    const patch = payload && typeof payload === 'object' ? payload : {};
+    let runAtStartup = current.runAtStartup;
+    if (typeof patch.runAtStartup === 'boolean') {
+      const result = applyRunAtStartupSetting(patch.runAtStartup);
+      if (result?.ok) {
+        runAtStartup = patch.runAtStartup;
+      }
+    }
     const next = {
       ...current,
-      ...(payload && typeof payload === 'object' ? payload : {}),
+      ...patch,
+      runAtStartup,
     };
     saveUiSettings(next);
     return next;
@@ -3018,7 +3066,7 @@ app.whenReady().then(async () => {
     console.warn('[secrets] migration failed:', redactSecrets(e?.message || e));
   }
 
-  mainWindow = await createWindow();
+  mainWindow = await createWindow({ startHidden: isAutoStartLaunch });
   
   // Handle window closed event
   mainWindow.on('closed', () => {

@@ -130,8 +130,12 @@ declare global {
       metadataSetCustomAiSettings: (settings: CustomAiSettings) => Promise<CustomAiSettings>;
 
       // ui settings
-      settingsGet: () => Promise<{ uiLanguage: string; uiLanguageLabel?: string }>;
-      settingsSet: (payload: { uiLanguage?: string; uiLanguageLabel?: string }) => Promise<{ uiLanguage: string; uiLanguageLabel?: string }>;
+      settingsGet: () => Promise<{ uiLanguage: string; uiLanguageLabel?: string; runAtStartup?: boolean }>;
+      settingsSet: (payload: { uiLanguage?: string; uiLanguageLabel?: string; runAtStartup?: boolean }) => Promise<{
+        uiLanguage: string;
+        uiLanguageLabel?: string;
+        runAtStartup?: boolean;
+      }>;
 
       // secrets (keytar-backed)
       secretsGetYouTubeTokens: () => Promise<{ ok: boolean; tokens: { redacted: true } | null }>;

@@ -1,7 +1,7 @@
 {
   "name": "yt_uploader_app",
   "private": true,
-  "version": "0.1.20",
+  "version": "0.1.21",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
@@ -80,7 +80,9 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "uninstallerIcon": "build/icon.ico",
+      "include": "installer.nsh",
+      "createDesktopShortcut": false
     },
     "mac": {
       "target": "dmg"

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-/** Trial duration in days (Try Free = 1 day). */
-const TRIAL_DAYS = 1;
+/** Trial duration in days (Try Free = 7 days). */
+const TRIAL_DAYS = 7;
 
 export async function POST() {
   const supabase = await createClient();

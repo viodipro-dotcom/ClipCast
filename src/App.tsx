@@ -313,6 +313,7 @@ export default function App() {
 
   const [dark, setDark] = React.useState<boolean>(() => localStorage.getItem('theme') === 'dark');
   const [uiLanguage, setUiLanguage] = React.useState<string>('en');
+  const [runAtStartup, setRunAtStartup] = React.useState(false);
   const [authDeepLinkUrl, setAuthDeepLinkUrl] = React.useState<string | null>(null);
   const [supabaseUser, setSupabaseUser] = React.useState<User | null>(null);
   const [entitlement, setEntitlement] = React.useState<EntitlementRow | null>(null);
@@ -365,7 +366,9 @@ export default function App() {
       try {
         const settings = await window.api?.settingsGet?.();
         const nextLang = settings?.uiLanguage || 'en';
+        const nextRunAtStartup = typeof settings?.runAtStartup === 'boolean' ? settings.runAtStartup : false;
         setUiLanguage(nextLang);
+        setRunAtStartup(nextRunAtStartup);
         await i18n.changeLanguage(nextLang);
       } catch (e) {
         console.error('Failed to load UI language:', e);
@@ -373,6 +376,20 @@ export default function App() {
     };
     void loadUiLanguage();
   }, [i18n]);
+
+  const handleRunAtStartupChange = React.useCallback(async (enabled: boolean) => {
+    const prev = runAtStartup;
+    setRunAtStartup(enabled);
+    try {
+      const next = await window.api?.settingsSet?.({ runAtStartup: enabled });
+      if (typeof next?.runAtStartup === 'boolean') {
+        setRunAtStartup(next.runAtStartup);
+      }
+    } catch (e) {
+      console.error('Failed to update startup setting:', e);
+      setRunAtStartup(prev);
+    }
+  }, [runAtStartup]);
   
   // Interface settings (commandBarPosition, panelsLayout)
   const [interfaceSettings, setInterfaceSettings] = React.useState<InterfaceSettings>(() => loadInterfaceSettings());
@@ -9163,6 +9180,8 @@ const add = async () => {
               console.error('Failed to persist UI language:', e);
             }
           }}
+          runAtStartup={runAtStartup}
+          onRunAtStartupChange={handleRunAtStartupChange}
         />
 
         {/* Account Dialog */}

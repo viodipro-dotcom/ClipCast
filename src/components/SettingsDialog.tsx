@@ -35,6 +35,8 @@ export interface SettingsDialogProps {
   onUiScaleChange: (scale: number) => void;
   lang: string;
   onLangChange: (lang: string) => void;
+  runAtStartup: boolean;
+  onRunAtStartupChange: (enabled: boolean) => void;
 }
 
 export default function SettingsDialog({
@@ -48,6 +50,8 @@ export default function SettingsDialog({
   onUiScaleChange,
   lang,
   onLangChange,
+  runAtStartup,
+  onRunAtStartupChange,
 }: SettingsDialogProps) {
   const { t } = useTranslation();
   const handleCommandBarPositionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -165,6 +169,26 @@ export default function SettingsDialog({
                 </MenuItem>
               ))}
             </Select>
+          </FormControl>
+
+          <Divider sx={{ my: 2 }} />
+
+          <FormControl component="fieldset" fullWidth sx={{ mb: 3 }}>
+            <FormLabel component="legend" sx={{ mb: 1, fontWeight: 500 }}>
+              {t('startup')}
+            </FormLabel>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={runAtStartup}
+                  onChange={(e) => onRunAtStartupChange(e.target.checked)}
+                />
+              }
+              label={t('runAtStartup')}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ ml: 4.5, display: 'block' }}>
+              {t('runAtStartupHelper')}
+            </Typography>
           </FormControl>
 
           <Divider sx={{ my: 2 }} />

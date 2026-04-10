@@ -13,11 +13,11 @@ const PLAN_FEATURES: Record<
   { price: string; period?: string; lines: string[]; cta: string; ctaHref?: string; disabled?: boolean }
 > = {
   try_free: {
-    price: "1 day trial",
+    price: "7 day trial",
     period: undefined,
     lines: [
-      "5 uploads",
-      "15 metadata generations",
+      "20 uploads",
+      "30 metadata generations",
       "YouTube: connect & upload",
       "Unlimited YouTube channels (switch anytime)",
     ],
@@ -96,7 +96,7 @@ export default async function PricingPage() {
       <section className={styles.hero}>
         <h1>Simple pricing</h1>
         <p className={styles.subtitle}>
-          Start with a 1-day free trial, then choose the plan that fits. Agency for teams is coming soon.
+          Start with a 7-day free trial, then choose the plan that fits. Agency for teams is coming soon.
         </p>
         <div className={styles.heroActions}>
           <Link href="/download" className={styles.ctaSecondary}>
