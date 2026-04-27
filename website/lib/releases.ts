@@ -19,7 +19,7 @@ export type ReleaseInfo = {
 };
 
 const OWNER = "viodipro-dotcom";
-const REPO = "ClipCast-Releases";
+const REPO = "ClipCast";
 const BASE_URL = `https://github.com/${OWNER}/${REPO}`;
 const GITHUB_API_LATEST_URL = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
 

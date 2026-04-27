@@ -65,7 +65,7 @@ npm run dist
 This produces a packaged app and installer (e.g. under [`release/`](package.json) per `build.directories.output`). The `dist` script already runs `prepare:cuda-dlls`, [`clean:outputs`](package.json), Vite `build`, and `build:icon` before **electron-builder**.
 
 - **Full offline packaging** expects [`vendor/`](package.json) content such as `vendor/python`, `vendor/bin` (and optional CUDA material under `vendor/cuda/`) to match your [electron-builder `extraResources`](package.json) configuration. If those trees are missing, adapt your pipeline or document your local layout.  
-- **Releases**: automation lives under [`.github/workflows/`](.github/workflows/). Publishing installers requires **GitHub repository secrets** (e.g. token for releases and any OAuth JSON used in CI to bundle a test client). Do not commit secrets; configure them in the GitHub **Actions** / **Secrets** UI for your fork.
+- **Releases**: automation lives under [`.github/workflows/`](.github/workflows/). GitHub Releases on this repo use the workflow `GITHUB_TOKEN` (no separate release PAT). You still need **repository secrets** for anything else the job uses (e.g. `YT_OAUTH_CLIENT_JSON` to bundle the OAuth client in CI). Do not commit secrets; configure them under **Settings → Secrets and variables → Actions**.
 
 ## Optional: marketing site (`website/`)
 

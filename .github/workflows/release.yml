@@ -1,6 +1,6 @@
-# Build and publish Electron app to GitHub Releases (public repo ClipCast-Releases) on version tags.
+# Build and publish Electron app to GitHub Releases on this repo (ClipCast) when a version tag is pushed.
 # Usage: bump version in package.json, commit, then push tag (e.g. v0.1.1).
-# GH_TOKEN: PAT with repo scope, stored in this (private) repo's Actions secrets; used only in CI, never shipped in the app.
+# Publishing uses GITHUB_TOKEN (contents: write). Other secrets (e.g. YT_OAUTH_CLIENT_JSON) stay in repo Settings → Secrets.
 name: Release
 
 on:
@@ -11,6 +11,8 @@ on:
 jobs:
   release:
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -156,5 +158,5 @@ jobs:
 
       - name: Release (electron-builder)
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run release

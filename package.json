@@ -62,7 +62,7 @@
     "publish": {
       "provider": "github",
       "owner": "viodipro-dotcom",
-      "repo": "ClipCast-Releases"
+      "repo": "ClipCast"
     },
     "win": {
       "target": "nsis",
