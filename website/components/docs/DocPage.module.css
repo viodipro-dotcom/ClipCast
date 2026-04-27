@@ -1,0 +1,53 @@
+.article {
+  margin: 0;
+}
+
+.header {
+  margin-bottom: 1.5rem;
+}
+
+.title {
+  margin: 0 0 0.5rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.description {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.body {
+  line-height: 1.6;
+}
+
+.body h2 {
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.body h3 {
+  margin-top: 1.25rem;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+
+.body p {
+  margin: 0.75rem 0;
+  color: var(--text-muted);
+}
+
+.body ul,
+.body ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.body a {
+  color: #a5b4fc;
+}

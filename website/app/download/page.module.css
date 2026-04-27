@@ -1,0 +1,184 @@
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+@media (max-width: 900px) {
+  .container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.hero h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.platformNote {
+  margin: 0.75rem 0 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.ctaSecondary {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 10px;
+  transition: background 0.15s, border-color 0.15s;
+  text-decoration: none;
+}
+
+.ctaSecondary:hover {
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--brand1);
+}
+
+.ctaSecondary:focus-visible {
+  outline: 2px solid var(--brand1);
+  outline-offset: 2px;
+}
+
+.downloads {
+  margin: 2rem 0;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 14px;
+}
+
+.platformIcon {
+  font-size: 2rem;
+}
+
+.card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.card p {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.muted {
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.platformHeader {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.platformText {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.downloadActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  align-items: center;
+}
+
+.downloadMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.fallbackNote {
+  margin: 0.75rem 0 0;
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+/* Primary CTA style — matches Home hero .ctaPrimary for design system consistency */
+.downloadBtn {
+  display: inline-block;
+  margin-top: auto;
+  padding: 1rem 1.5rem 0.75rem;
+  background: linear-gradient(135deg, var(--brand1), var(--brand2));
+  color: white;
+  font-weight: 600;
+  font-size: 1rem;
+  border-radius: 10px;
+  text-decoration: none;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.downloadBtn:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+}
+
+.downloadBtn:focus-visible {
+  outline: 2px solid var(--brand1);
+  outline-offset: 2px;
+}
+
+.downloadBtn[aria-disabled] {
+  background: var(--panel2);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.requirements {
+  margin-top: 2.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 12px;
+}
+
+.requirements h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+.requirementsList {
+  margin: 0;
+  padding-left: 1.5rem;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.back {
+  margin-top: 2rem;
+}

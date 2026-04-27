@@ -1,0 +1,199 @@
+#root {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Custom scrollbar styling to match app design */
+/* Webkit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+  background-clip: padding-box;
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.4);
+  background-clip: padding-box;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.6);
+  background-clip: padding-box;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
+}
+
+.dark * {
+  scrollbar-color: rgba(139, 92, 246, 0.4) transparent;
+}
+
+/* Ensure DataGrid scrollbars use the same styles */
+.MuiDataGrid-virtualScroller::-webkit-scrollbar,
+.MuiDataGrid-main::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.MuiDataGrid-virtualScroller::-webkit-scrollbar-track,
+.MuiDataGrid-main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.MuiDataGrid-virtualScroller::-webkit-scrollbar-thumb,
+.MuiDataGrid-main::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.MuiDataGrid-virtualScroller::-webkit-scrollbar-thumb:hover,
+.MuiDataGrid-main::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.5);
+  background-clip: padding-box;
+}
+
+.dark .MuiDataGrid-virtualScroller::-webkit-scrollbar-thumb,
+.dark .MuiDataGrid-main::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.4);
+  background-clip: padding-box;
+}
+
+.dark .MuiDataGrid-virtualScroller::-webkit-scrollbar-thumb:hover,
+.dark .MuiDataGrid-main::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.6);
+  background-clip: padding-box;
+}
+
+/* Animated gradient background */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes glowPulse {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+  50% {
+    box-shadow: 0 4px 20px rgba(99, 102, 241, 0.5);
+  }
+}
+
+@keyframes subtlePulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.01);
+  }
+}
+
+/* Smooth color transitions */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Enhanced hover effects for interactive elements */
+.MuiButton-contained:hover {
+  animation: glowPulse 2s ease-in-out infinite;
+}
+
+.MuiChip-root:hover {
+  transform: scale(1.05);
+  transition: transform 0.2s ease-in-out;
+}
+
+/* Animated gradient for logo/icon boxes */
+.gradient-animated {
+  background-size: 200% 200%;
+  animation: gradientShift 8s ease infinite;
+}
+
+/* Manual drag reorder visuals (DataGrid) */
+.MuiDataGrid-row.row-dragover {
+  outline: 2px dashed rgba(99, 102, 241, 0.9);
+  outline-offset: -2px;
+}
+
+.MuiDataGrid-row.row-dragging {
+  opacity: 0.55;
+}
+
+/* When manual reorder is enabled, avoid requiring text selection to start a drag. */
+.manual-reorder-enabled .MuiDataGrid-row {
+  cursor: grab;
+}
+.manual-reorder-enabled .MuiDataGrid-row:active {
+  cursor: grabbing;
+}
+.manual-reorder-enabled .MuiDataGrid-cell {
+  user-select: none;
+}

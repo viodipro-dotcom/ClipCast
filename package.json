@@ -1,0 +1,118 @@
+{
+  "name": "yt_uploader_app",
+  "private": true,
+  "license": "MIT",
+  "version": "0.1.21",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "clean:outputs": "node scripts/clean-outputs.mjs",
+    "build:icon": "node scripts/build-icon.mjs",
+    "prepare:cuda-dlls": "node scripts/prepare-cuda-dlls.mjs",
+    "dist": "npm run prepare:cuda-dlls && npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish never",
+    "release": "npm run prepare:cuda-dlls && npm run clean:outputs && npm run build && npm run build:icon && electron-builder --publish always",
+    "preview": "vite preview",
+    "test": "tsx test-utils.ts"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.6",
+    "@mui/material": "^7.3.6",
+    "@mui/x-data-grid": "^8.22.0",
+    "@mui/x-date-pickers": "^7.3.6",
+    "date-fns": "^3.0.0",
+    "electron-log": "^5.2.0",
+    "electron-updater": "^6.3.9",
+    "googleapis": "^169.0.0",
+    "i18next": "^25.8.0",
+    "keytar": "^7.9.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-i18next": "^16.5.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "electron": "^31.3.1",
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.33.5",
+    "sharp-ico": "^0.1.5",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.21",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.clipcast.app",
+    "productName": "ClipCast",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "yt_pipeline/**",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "viodipro-dotcom",
+      "repo": "ClipCast-Releases"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "include": "installer.nsh",
+      "createDesktopShortcut": false
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "yt_pipeline/**"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/cuda",
+        "to": "python/Library/bin",
+        "filter": [
+          "**/*.dll"
+        ]
+      },
+      {
+        "from": "vendor/python",
+        "to": "python",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
+  }
+}

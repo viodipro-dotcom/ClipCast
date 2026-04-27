@@ -1,0 +1,57 @@
+.container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+@media (max-width: 900px) {
+  .container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.updated {
+  margin: 0 0 2rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.container h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.section {
+  margin: 1.75rem 0;
+}
+
+.section h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.section p,
+.section ul {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.section ul {
+  padding-left: 1.5rem;
+  margin-top: 0.5rem;
+}
+
+.section li {
+  margin: 0.25rem 0;
+}
+
+.back {
+  margin-top: 2.5rem;
+}

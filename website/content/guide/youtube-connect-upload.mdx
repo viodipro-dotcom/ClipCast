@@ -1,0 +1,29 @@
+---
+title: YouTube Connect & Upload
+description: OAuth sign-in and upload to YouTube.
+---
+
+<DocPage title="YouTube Connect & Upload" description="OAuth sign-in and upload to YouTube.">
+
+Connect your YouTube account to enable uploads and scheduling. The app uses **Google OAuth** (Desktop app flow): you sign in once in the browser and the connection is stored securely on your device.
+
+<StepBlock title="Step 1 — Check connection status" imageSrc="/docs/images/youtube-connect-upload/01-youtube-status.jpg" imageAlt="Top toolbar: YouTube connection chip" caption="Screenshot 01 — Top toolbar: YouTube status chip (Connected / Not connected)">
+In the **top toolbar**, the **YouTube chip** shows **Connected** (green) or **Not connected** (default).
+</StepBlock>
+
+<StepBlock title="Step 2 — Connect or reconnect YouTube" imageSrc="/docs/images/youtube-connect-upload/02-connect-youtube.jpg" imageAlt="Connect YouTube" caption="Screenshot 02 — YouTube chip menu: Reconnect">
+Click the **YouTube chip**, then choose **Reconnect**. The app opens your system browser to Google’s consent page; after you sign in and authorize, the app completes the connection. Use **Reconnect** if the connection has expired or was revoked. The chip menu also offers **Test connection** to verify that credentials are loaded.  
+**Advanced:** If you manage your own OAuth credentials, make sure they are configured as a **Desktop app** client and add them via **Settings → Developer mode → Open User Data**.
+</StepBlock>
+
+<StepBlock title="Step 3 — Upload to YouTube" imageSrc="/docs/images/youtube-connect-upload/03-upload.jpg" imageAlt="Publish to YouTube" caption="Screenshot 03 — Publish → YouTube only → Publish to YouTube">
+Select one or more rows, click **Publish**, choose **YouTube only**, then **Publish to YouTube**. The app uses the YouTube metadata (title, description, tags) and the row’s **visibility** setting. If a future publish time is set, the video is scheduled; otherwise it uploads immediately. Rows already marked as posted for YouTube are skipped. You can also schedule a single video via the **Schedule** dialog for YouTube.
+</StepBlock>
+
+**Common issues**
+- **OAuth / invalid_client** — Ensure: 1) OAuth client type is **Desktop app** (or **Other**), not Web application; 2) Client ID and Secret are copied correctly; 3) **YouTube Data API v3** is enabled in Google Cloud Console; 4) OAuth consent screen is configured and you are a test user if the app is in testing.
+- **Reconnect** — If the connection drops or tokens are invalid, use **Reconnect** from the YouTube chip menu to go through the browser flow again. **Test connection** only checks that client credentials load; it does not re-authorize the account.
+
+<NextLinks prev={{ slug: "exports", label: "Exports" }} next={{ slug: "manual-assist", label: "Manual Assist" }} />
+
+</DocPage>

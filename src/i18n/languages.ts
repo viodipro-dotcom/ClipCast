@@ -1,0 +1,18 @@
+export const UI_LANGUAGE_OPTIONS = [
+  { code: 'en', labelKey: 'langEnglish', label: 'English' },
+  { code: 'ar', labelKey: 'langArabic', label: 'Arabic' },
+  { code: 'de', labelKey: 'langGerman', label: 'German' },
+  { code: 'es', labelKey: 'langSpanish', label: 'Spanish' },
+  { code: 'fr', labelKey: 'langFrench', label: 'French' },
+  { code: 'hi', labelKey: 'langHindi', label: 'Hindi' },
+  { code: 'it', labelKey: 'langItalian', label: 'Italian' },
+  { code: 'ja', labelKey: 'langJapanese', label: 'Japanese' },
+  { code: 'ko', labelKey: 'langKorean', label: 'Korean' },
+  { code: 'pl', labelKey: 'langPolish', label: 'Polish' },
+  { code: 'pt', labelKey: 'langPortuguese', label: 'Portuguese' },
+  { code: 'ro', labelKey: 'langRomanian', label: 'Romanian' },
+  { code: 'ru', labelKey: 'langRussian', label: 'Russian' },
+  { code: 'tr', labelKey: 'langTurkish', label: 'Turkish' },
+  { code: 'uk', labelKey: 'langUkrainian', label: 'Ukrainian' },
+  { code: 'zh', labelKey: 'langChinese', label: 'Chinese' },
+];

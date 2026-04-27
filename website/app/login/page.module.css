@@ -1,0 +1,48 @@
+.container {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+@media (max-width: 900px) {
+  .container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+.container h1 {
+  margin: 0 0 1.5rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.subtitle {
+  margin: 0 0 1.25rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.button {
+  display: inline-block;
+  margin-top: 0.5rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.button:hover {
+  border-color: var(--accent, #6366f1);
+  color: var(--accent, #6366f1);
+}
+
+.errorText {
+  margin-top: 0.75rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
