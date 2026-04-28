@@ -1,4 +1,10 @@
 ########################################
+# CI: release workflow kept out of repo (local copy allowed; not tracked)
+########################################
+.github/workflows/release.yml
+
+
+########################################
 # OS / Editor
 ########################################
 .DS_Store
