@@ -5,33 +5,37 @@ export default function CookiesPage() {
   return (
     <div className={styles.container}>
       <h1>Cookie Policy</h1>
-      <p className={styles.updated}>Last updated: 3 Mar 2026</p>
+      <p className={styles.updated}>Last updated: 27 April 2026</p>
 
       <section className={styles.section}>
-        <h2>What we use cookies for</h2>
+        <h2>This website</h2>
         <p>
-          We use strictly necessary cookies to run the ClipCast website. These are required for:
+          This marketing site does not offer sign-in or user accounts. We do not place cookies for the
+          purpose of keeping you logged in to ClipCast on this website.
         </p>
-        <ul>
-          <li>Authentication and session management (so you stay signed in)</li>
-          <li>Security (e.g. protecting against cross-site request forgery)</li>
-        </ul>
+      </section>
+
+      <section className={styles.section}>
+        <h2>Technical cookies</h2>
         <p>
-          These cookies are essential for the service to function. We do not use them for advertising or tracking.
+          Your browser or our hosting infrastructure may use strictly necessary technical mechanisms (such
+          as cookies or similar storage) for basic delivery, stability, load balancing, or security.
+          Those are not used by us for advertising or profiling.
         </p>
       </section>
 
       <section className={styles.section}>
         <h2>Analytics and marketing</h2>
         <p>
-          We do not currently use analytics or marketing cookies. If we add them in the future, we will ask for your consent before placing any non-essential cookies and will update this page.
+          We do not use analytics or marketing cookies on this site. If we ever introduce optional,
+          non-essential cookies, we will update this page and obtain consent where required by law.
         </p>
       </section>
 
       <section className={styles.section}>
         <h2>More information</h2>
         <p>
-          For how we handle your personal data overall, see our{" "}
+          For how we handle personal data overall, see our{" "}
           <Link href="/privacy">Privacy Policy</Link>.
         </p>
       </section>
