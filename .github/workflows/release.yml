@@ -35,6 +35,67 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Bundled runtime is NOT in git — must exist before electron-builder extraResources copy.
+      # Without these steps the installer is ~400MB smaller and fails at startup (missing python/ffmpeg).
+      - name: Prepare bundled Python runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pyVersion = "3.12.10"
+          $pyZipUrl = "https://www.python.org/ftp/python/$pyVersion/python-$pyVersion-embed-amd64.zip"
+          $getPipUrl = "https://bootstrap.pypa.io/get-pip.py"
+          $zipPath = Join-Path $env:RUNNER_TEMP "python-embed.zip"
+          $extractPath = "vendor\python"
+          $getPipPath = Join-Path $env:RUNNER_TEMP "get-pip.py"
+          Write-Host "==> Download embeddable Python $pyVersion"
+          Invoke-WebRequest -Uri $pyZipUrl -OutFile $zipPath
+          if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
+          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+          Write-Host "==> Extract embeddable Python"
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          $pythonExe = Join-Path $extractPath "python.exe"
+          if (-not (Test-Path $pythonExe)) { throw "python.exe missing after extract: $pythonExe" }
+          Write-Host "==> Enable site-packages"
+          $pthFile = Join-Path $extractPath "python312._pth"
+          if (-not (Test-Path $pthFile)) { throw "python312._pth not found: $pthFile" }
+          (Get-Content $pthFile) -replace '^#import site','import site' | Set-Content $pthFile -Encoding ASCII
+          Write-Host "==> Install pip into embedded Python"
+          Invoke-WebRequest -Uri $getPipUrl -OutFile $getPipPath
+          & $pythonExe $getPipPath
+          Write-Host "==> Upgrade pip"
+          & $pythonExe -m pip install --upgrade pip
+          Write-Host "==> Install requirements into embedded Python"
+          & $pythonExe -m pip install -r yt_pipeline/requirements.txt
+          Write-Host "==> Verify embedded runtime"
+          & $pythonExe -c "import sys; print(sys.executable)"
+          if (-not (Test-Path (Join-Path $extractPath 'python.exe'))) { throw "Missing vendor/python/python.exe" }
+
+      - name: Prepare bundled ffmpeg/ffprobe
+        shell: pwsh
+        run: |
+          $ffmpegUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          $zipPath = Join-Path $env:RUNNER_TEMP "ffmpeg.zip"
+          $extractPath = Join-Path $env:RUNNER_TEMP "ffmpeg"
+          Invoke-WebRequest -Uri $ffmpegUrl -OutFile $zipPath
+          if (Test-Path $extractPath) { Remove-Item -Recurse -Force $extractPath }
+          Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+          $rootDir = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+          if (-not $rootDir) { throw "ffmpeg archive root folder not found" }
+          $binDir = Join-Path $rootDir.FullName "bin"
+          if (-not (Test-Path $binDir)) { throw "ffmpeg bin folder not found: $binDir" }
+          New-Item -ItemType Directory -Force -Path vendor\bin | Out-Null
+          Copy-Item (Join-Path $binDir "ffmpeg.exe") -Destination vendor\bin\ffmpeg.exe -Force
+          Copy-Item (Join-Path $binDir "ffprobe.exe") -Destination vendor\bin\ffprobe.exe -Force
+          if (-not (Test-Path vendor\bin\ffmpeg.exe)) { throw "ffmpeg.exe missing after copy" }
+          if (-not (Test-Path vendor\bin\ffprobe.exe)) { throw "ffprobe.exe missing after copy" }
+
+      - name: Verify vendor bundles exist
+        shell: pwsh
+        run: |
+          foreach ($p in @('vendor\python\python.exe', 'vendor\bin\ffmpeg.exe', 'vendor\bin\ffprobe.exe')) {
+            if (-not (Test-Path $p)) { throw "Missing required bundle (run Prepare steps): $p" }
+          }
+
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
