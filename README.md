@@ -4,6 +4,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+| ![ClipCast main window — video queue, metadata editor, and multi-platform status](assets/readme-main-dashboard.png) |
+|:--:|
+| *Main window: manage your queue, edit titles and descriptions, and see YouTube, Instagram, and TikTok at a glance.* |
+
 **Ready to use:** you only need to **download the Windows installer** from **[GitHub Releases](https://github.com/viodipro-dotcom/ClipCast/releases)**, **install it**, and **open ClipCast**. No Git, no Node.js, no compiling from source, and no command line required for normal use.
 
 ## Get started
@@ -64,10 +68,6 @@ An **NVIDIA GPU** alone is not enough: drivers should be recent enough for **CUD
 3. In a terminal, `nvidia-smi` can confirm the driver reports a sensible CUDA version.
 
 More detail: **[getclipcast.app/guide](https://getclipcast.app/guide)** (troubleshooting section).
-
-| [![Developer mode — Settings](https://getclipcast.app/docs/images/settings/06-developer-mode.jpg)](https://getclipcast.app/guide/settings) |
-|:--:|
-| *Developer mode — compute backend (screenshot from the online guide).* |
 
 ### Outputs folder
 
