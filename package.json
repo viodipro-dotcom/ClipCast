@@ -2,7 +2,7 @@
   "name": "yt_uploader_app",
   "private": true,
   "license": "MIT",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
