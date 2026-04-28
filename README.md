@@ -1,8 +1,12 @@
 # ClipCast
 
-**ClipCast** (internal package name: `yt_uploader_app`) is an open source **Electron** desktop app for video creators: import files, run a local **pipeline** (transcription, AI-assisted metadata), export for **YouTube, Instagram, and TikTok**, and **schedule** posts. Credentials are **bring your own** (API keys and OAuth) and stored in the OS secure store, not in this repository.
+**ClipCast** helps you prepare and **schedule** video posts for **YouTube**, **Instagram**, and **TikTok**: import files, run a **local pipeline** (transcription, AI-assisted metadata), then publish or use **Manual Assist** where the app does not upload for you. It is an open source **Electron** desktop app (internal package name: `yt_uploader_app`). API keys and OAuth are **bring your own** (BYOK) and live in the OS secure store, not in this repository.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**Quick guide (typical flow):** **Install** · **Integrations** (OAuth / API keys) · **Add videos** · **Generate metadata** · **Plan** · **Publish** · optional **Auto Upload**
+
+**More help:** step-by-step docs, screenshots, and troubleshooting live on the website — **[https://getclipcast.app/guide](https://getclipcast.app/guide)** (same content as the `website/` guide in this repo, kept up to date for end users).
 
 ## Features
 
@@ -122,11 +126,23 @@ Optional: [`assets/oauth/google_oauth_client.sample.json`](assets/oauth/google_o
 
 ## Troubleshooting
 
-### GPU (Windows)
+### GPU and CUDA (Windows)
 
-- ClipCast can use an **NVIDIA** GPU for some workloads if drivers support the **CUDA 12.x** stack used by the stack you ship.  
-- If the driver is too old, you may see detection with a failed CUDA smoke test; the app can **fall back to CPU**.  
-- Check **Developer mode** in the app for device / smoke-test messages, and run `nvidia-smi` on the host. Update the driver if needed.
+Having an **NVIDIA GPU** is **not enough** by itself: the **CUDA** paths inside ClipCast expect a recent driver stack (**CUDA 12.x–compatible** drivers on Windows). If your driver is too old, mismatched, or blocked by policy, ClipCast may **detect** the GPU but still **fall back to CPU** after a failed CUDA check — this is normal and keeps the app usable.
+
+**Do this:**
+
+1. Update **GeForce / Studio** drivers from [NVIDIA](https://www.nvidia.com/Download/index.aspx) (or your OEM), reboot, try again.  
+2. In ClipCast open **Settings → Developer mode** and inspect **Compute backend**: **CUDA smoke test**, **Fallback reason**, and **Selected device**. Use **Refresh** after changing drivers.  
+3. From a terminal, run `nvidia-smi` and confirm the reported CUDA version looks sane for your GPU.
+
+Screenshots below match the online guide (**[Troubleshooting](https://getclipcast.app/guide/troubleshooting)** section — Developer mode UI):
+
+| [![Developer mode — Settings](https://getclipcast.app/docs/images/settings/06-developer-mode.jpg)](https://getclipcast.app/guide/settings) |
+|:--:|
+| *Developer mode — compute backend and diagnostics (website screenshot).* |
+
+For **step-by-step** fixes, CUDA notes, export paths, upload issues, and more detail than this readme, open **[https://getclipcast.app/guide](https://getclipcast.app/guide)** (full guide with search).
 
 ### Outputs folder
 

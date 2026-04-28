@@ -5,6 +5,8 @@ description: Fix common issues and errors.
 
 <DocPage title="Troubleshooting" description="Fix common issues and errors.">
 
+For the **complete guide** with search and screenshots for every feature, use **[getclipcast.app/guide](https://getclipcast.app/guide)**.
+
 If something is not working as expected, start with the symptom you see below.
 
 ## Generate Metadata does not start or fails
@@ -22,21 +24,30 @@ If ClipCast still cannot generate metadata, send the technical log to support.
 
 ## ClipCast uses CPU even though your laptop has an NVIDIA GPU
 
-ClipCast may detect your NVIDIA GPU but still fall back to CPU if no usable CUDA device is exposed by the current driver or runtime.
+**Important:** Owning a laptop or desktop with an **NVIDIA GPU does not guarantee CUDA acceleration.** ClipCast bundles DLLs that target a **CUDA 12.x–compatible** runtime. If **Windows NVIDIA drivers are too old**, incomplete, or blocked (corporate PC, dual-GPU quirks), the hardware may still appear in detection while **CUDA fails** — then ClipCast correctly **falls back to CPU** so you can keep working.
+
+ClipCast may detect your NVIDIA GPU but still fall back to CPU if no usable CUDA device is exposed by the **current driver or runtime**.
 
 Try this:
 
-1. Open **Developer Mode**.
-2. Click **Refresh** in the **Compute backend** section.
-3. Check:
+1. Install the **latest** NVIDIA Game Ready / Studio (or OEM) drivers from NVIDIA or your laptop vendor — **driver age matters more than “having a discrete GPU.”**
+2. Reboot Windows after updating drivers.
+3. Open **Developer Mode**.
+4. Click **Refresh** in the **Compute backend** section.
+5. Check:
    - **Selected device**
    - **CUDA smoke test**
    - **Fallback reason**
-4. Run `nvidia-smi` in Windows Command Prompt.
-5. Update your NVIDIA driver if it is old.
-6. Restart your PC and test again.
+6. Run `nvidia-smi` in Windows Command Prompt and confirm GPU and driver versions look healthy.
+7. Retry ClipCast.
 
 If GPU mode is not available, ClipCast will fall back to CPU automatically so you can still continue working.
+
+![Developer mode — Compute backend and CUDA diagnostics](/docs/images/settings/06-developer-mode.jpg)
+
+*Settings → Developer mode: use **Refresh** and read **CUDA smoke test** / **Fallback reason** after updating drivers.*
+
+For more context (screenshots and related topics), browse the **[full guide index](https://getclipcast.app/guide)** — search **CUDA**, **Developer mode**, or **GPU**.
 
 ---
 
