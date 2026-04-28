@@ -6,6 +6,7 @@ Thumbs.db
 
 # Cursor IDE (entire project metadata; do not commit if you want it local-only)
 .cursor/
+.cursorignore
 
 .vscode/*
 !.vscode/extensions.json
