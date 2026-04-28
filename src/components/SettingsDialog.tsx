@@ -19,8 +19,6 @@ import {
   Switch,
   MenuItem,
   Select,
-  Tab,
-  Tabs,
 } from '@mui/material';
 import type { InterfaceSettings } from '../utils/interfaceSettings';
 import { useTranslation } from 'react-i18next';
@@ -61,10 +59,6 @@ export default function SettingsDialog({
   onYouTubeStateMayChange,
 }: SettingsDialogProps) {
   const { t } = useTranslation();
-  const [settingsTab, setSettingsTab] = React.useState(0);
-  React.useEffect(() => {
-    if (!open) setSettingsTab(0);
-  }, [open]);
 
   const handleCommandBarPositionChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     onChangeInterfaceSettings({
@@ -80,27 +74,17 @@ export default function SettingsDialog({
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ pb: 0 }}>{t('settings')}</DialogTitle>
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
-        <Tabs
-          value={settingsTab}
-          onChange={(_, v) => setSettingsTab(v)}
-          aria-label={t('settings')}
-        >
-          <Tab label={t('settingsTabInterface')} id="settings-tab-0" />
-          <Tab label={t('settingsTabIntegrations')} id="settings-tab-1" />
-        </Tabs>
-      </Box>
-      <DialogContent>
-        {settingsTab === 1 ? (
-          <IntegrationsSettingsPanel
-            open={open}
-            onSnack={onSnack}
-            onYouTubeStateMayChange={onYouTubeStateMayChange}
-          />
-        ) : null}
-        {settingsTab === 0 ? (
-        <Box sx={{ pt: 1 }} role="tabpanel" id="settings-panel-0" aria-labelledby="settings-tab-0">
+      <DialogTitle>{t('settings')}</DialogTitle>
+      <DialogContent
+        dividers
+        sx={{
+          maxHeight: 'min(70vh, 720px)',
+        }}
+      >
+        <Typography component="h2" variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+          {t('settingsTabInterface')}
+        </Typography>
+        <Box sx={{ pt: 0.5 }}>
           {/* UI size */}
           <FormControl component="fieldset" fullWidth sx={{ mb: 2 }}>
             <FormLabel component="legend" sx={{ mb: 1, fontWeight: 500 }}>
@@ -251,7 +235,17 @@ export default function SettingsDialog({
             </RadioGroup>
           </FormControl>
         </Box>
-        ) : null}
+
+        <Divider sx={{ my: 3 }} />
+
+        <Typography component="h2" variant="subtitle1" sx={{ mb: 1, fontWeight: 600 }}>
+          {t('settingsTabIntegrations')}
+        </Typography>
+        <IntegrationsSettingsPanel
+          open={open}
+          onSnack={onSnack}
+          onYouTubeStateMayChange={onYouTubeStateMayChange}
+        />
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} variant="contained">

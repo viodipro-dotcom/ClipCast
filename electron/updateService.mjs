@@ -28,6 +28,38 @@ function isNoPublishedVersionsLogEntry(args) {
   return isNoPublishedVersionsError(combined);
 }
 
+/** electron-updater sometimes surfaces GitHub HTML/API responses as huge strings containing HTTP headers */
+function looksLikeGithubHeadersOrHtmlBlob(msg) {
+  const s = String(msg);
+  return (
+    s.includes('x-github-request-id') ||
+    (s.includes('"vary"') && /PJAX|turbo/i.test(s)) ||
+    (s.includes('"set-cookie"') && s.includes('github.com'))
+  );
+}
+
+function normalizeUpdaterError(err) {
+  const raw = String(err?.message ?? err ?? '');
+  if (!raw || raw === '[object Object]') {
+    return 'Update check failed.';
+  }
+  if (looksLikeGithubHeadersOrHtmlBlob(raw)) {
+    return (
+      'Could not load update metadata from GitHub. The repo needs a published Release that includes latest.yml ' +
+      '(run electron-builder publish), or GitHub returned a login/rate-limit page instead of the feed.'
+    );
+  }
+  if (raw.length > 480) {
+    return `${raw.slice(0, 240)}…`;
+  }
+  return raw;
+}
+
+/** Treat as “no update” — no scary banner */
+function shouldSuppressUpdaterErrorBanner(err) {
+  return isNoPublishedVersionsError(err);
+}
+
 function sendStatus(payload) {
   const win = getMainWindow?.();
   if (win && !win.isDestroyed() && win.webContents) {
@@ -101,7 +133,12 @@ function init(autoUpdaterConfig) {
   });
 
   autoUpdater.on('error', (err) => {
-    const msg = err?.message ?? String(err);
+    if (shouldSuppressUpdaterErrorBanner(err)) {
+      sendStatus({ state: 'none', info: null, progress: null, error: null });
+      log.info?.('[updater] no release feed on GitHub (banner suppressed)');
+      return;
+    }
+    const msg = normalizeUpdaterError(err);
     log.warn?.('[updater] error', msg);
     sendStatus({
       state: 'error',
@@ -117,13 +154,22 @@ function check() {
     const maybePromise = autoUpdater.checkForUpdates();
     if (maybePromise && typeof maybePromise.then === 'function') {
       maybePromise.catch((e) => {
-        const msg = e?.message ?? String(e);
+        if (shouldSuppressUpdaterErrorBanner(e)) {
+          sendStatus({ state: 'none', info: null, progress: null, error: null });
+          log.info?.('[updater] checkForUpdates: no published versions (suppressed)');
+          return;
+        }
+        const msg = normalizeUpdaterError(e);
         log.warn?.('[updater] checkForUpdates failed', msg);
         sendStatus({ state: 'error', error: msg });
       });
     }
   } catch (e) {
-    const msg = e?.message ?? String(e);
+    if (shouldSuppressUpdaterErrorBanner(e)) {
+      sendStatus({ state: 'none', info: null, progress: null, error: null });
+      return;
+    }
+    const msg = normalizeUpdaterError(e);
     log.warn?.('[updater] checkForUpdates threw', msg);
     sendStatus({ state: 'error', error: msg });
   }

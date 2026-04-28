@@ -15,7 +15,7 @@ export interface CommandBarProps {
   onStopCurrentMetadata?: () => void;
   onCancelQueuedMetadata?: () => void;
   onStopAllMetadata?: () => void;
-  onInterfaceClick?: () => void;
+  onSettingsClick?: () => void;
   onAccountClick?: () => void;
   onDiagnosticsClick: () => void;
   onDeveloperModeClick: () => void;
@@ -38,7 +38,7 @@ export default function CommandBar({
   onStopCurrentMetadata,
   onCancelQueuedMetadata,
   onStopAllMetadata,
-  onInterfaceClick,
+  onSettingsClick,
   onAccountClick,
   onDiagnosticsClick,
   onDeveloperModeClick,
@@ -301,9 +301,9 @@ export default function CommandBar({
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         >
-          {onInterfaceClick && (
-            <MenuItem onClick={() => { onInterfaceClick(); handleMenuClose(); }}>
-              🎨 {t('interface')}
+          {onSettingsClick && (
+            <MenuItem onClick={() => { onSettingsClick(); handleMenuClose(); }}>
+              {t('settings')}
             </MenuItem>
           )}
           {onAccountClick && (

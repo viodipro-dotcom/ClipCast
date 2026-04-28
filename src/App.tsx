@@ -378,7 +378,7 @@ export default function App() {
     localStorage.setItem('uiScale', String(uiScale));
   }, [uiScale]);
   const [customAIDialogOpen, setCustomAIDialogOpen] = React.useState(false);
-  const [interfaceDialogOpen, setInterfaceDialogOpen] = React.useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = React.useState(false);
   
   // Splitter drag state
   const [isSplitterDragging, setIsSplitterDragging] = React.useState(false);
@@ -8439,7 +8439,7 @@ const add = async () => {
             onStopCurrentMetadata={handleStopCurrentMetadata}
             onCancelQueuedMetadata={handleCancelQueuedMetadata}
             onStopAllMetadata={() => void stopAllMetadataJobs('user')}
-            onInterfaceClick={() => setInterfaceDialogOpen(true)}
+            onSettingsClick={() => setSettingsDialogOpen(true)}
             onCustomAIClick={() => setCustomAIDialogOpen(true)}
             onDiagnosticsClick={() => setDiagnosticsDialogOpen(true)}
             onDeveloperModeClick={() => setDeveloperModeDialogOpen(true)}
@@ -8721,8 +8721,8 @@ const add = async () => {
 
         {/* Interface Dialog */}
         <SettingsDialog
-          open={interfaceDialogOpen}
-          onClose={() => setInterfaceDialogOpen(false)}
+          open={settingsDialogOpen}
+          onClose={() => setSettingsDialogOpen(false)}
           interfaceSettings={interfaceSettings}
           onChangeInterfaceSettings={updateInterfaceSettings}
           dark={dark}
@@ -12171,7 +12171,7 @@ const add = async () => {
             onStopCurrentMetadata={handleStopCurrentMetadata}
             onCancelQueuedMetadata={handleCancelQueuedMetadata}
             onStopAllMetadata={() => void stopAllMetadataJobs('user')}
-            onInterfaceClick={() => setInterfaceDialogOpen(true)}
+            onSettingsClick={() => setSettingsDialogOpen(true)}
             onCustomAIClick={() => setCustomAIDialogOpen(true)}
             onDiagnosticsClick={() => setDiagnosticsDialogOpen(true)}
             onDeveloperModeClick={() => setDeveloperModeDialogOpen(true)}
