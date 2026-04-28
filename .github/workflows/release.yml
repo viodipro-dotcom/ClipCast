@@ -1,6 +1,6 @@
 # Build and publish Electron app to GitHub Releases on this repo (ClipCast) when a version tag is pushed.
 # Usage: bump version in package.json, commit, then push tag (e.g. v0.1.1).
-# Publishing uses GITHUB_TOKEN (contents: write). Other secrets (e.g. YT_OAUTH_CLIENT_JSON) stay in repo Settings → Secrets.
+# Publishing uses GITHUB_TOKEN (contents: write). OAuth client credentials are not bundled; users bring their own (see README).
 name: Release
 
 on:
@@ -25,26 +25,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Prepare bundled Google OAuth client (YouTube)
-        shell: pwsh
-        env:
-          YT_OAUTH_CLIENT_JSON: ${{ secrets.YT_OAUTH_CLIENT_JSON }}
-        run: |
-          $ErrorActionPreference = "Stop"
-          if ([string]::IsNullOrWhiteSpace($env:YT_OAUTH_CLIENT_JSON)) {
-            throw "Missing secret YT_OAUTH_CLIENT_JSON"
-          }
-          $outDir = "assets\\oauth"
-          $outPath = Join-Path $outDir "google_oauth_client.json"
-          New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-          $env:YT_OAUTH_CLIENT_JSON | Out-File -FilePath $outPath -Encoding utf8
-          if (-not (Test-Path $outPath)) { throw "Failed to write $outPath" }
-          $json = Get-Content $outPath -Raw | ConvertFrom-Json
-          if (-not $json.installed.client_id -or -not $json.installed.client_secret) {
-            throw "Invalid OAuth JSON: expected installed.client_id and installed.client_secret"
-          }
-          Write-Host "Bundled OAuth client written to $outPath"
 
       - name: Prepare bundled Python runtime
         shell: pwsh

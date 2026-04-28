@@ -65,7 +65,7 @@ npm run dist
 This produces a packaged app and installer (e.g. under [`release/`](package.json) per `build.directories.output`). The `dist` script already runs `prepare:cuda-dlls`, [`clean:outputs`](package.json), Vite `build`, and `build:icon` before **electron-builder**.
 
 - **Full offline packaging** expects [`vendor/`](package.json) content such as `vendor/python`, `vendor/bin` (and optional CUDA material under `vendor/cuda/`) to match your [electron-builder `extraResources`](package.json) configuration. If those trees are missing, adapt your pipeline or document your local layout.  
-- **Releases**: automation lives under [`.github/workflows/`](.github/workflows/). GitHub Releases on this repo use the workflow `GITHUB_TOKEN` (no separate release PAT). You still need **repository secrets** for anything else the job uses (e.g. `YT_OAUTH_CLIENT_JSON` to bundle the OAuth client in CI). Do not commit secrets; configure them under **Settings → Secrets and variables → Actions**.  
+- **Releases**: automation lives under [`.github/workflows/`](.github/workflows/). GitHub Releases on this repo use the workflow `GITHUB_TOKEN` (no separate release PAT). **OAuth client credentials are not bundled** in CI builds—each user creates their own Google Cloud OAuth client (see **YouTube** below). Do not commit secrets; optional secrets belong under **Settings → Secrets and variables → Actions** only if you extend the workflow.  
 - **In-app updates (electron-updater)**: The update feed is defined by [`build.publish`](package.json) (`provider: github`, this repository). CI publishes `latest.yml` and installers here; installed apps load that metadata at install time. If a user still runs a build produced when the update feed pointed at a different GitHub repository, **in-app update will not switch feeds** until they install at least one release from **[Releases on this repo](https://github.com/viodipro-dotcom/ClipCast/releases)** manually; afterward updates follow these releases.
 
 ## Optional: marketing site (`website/`)
@@ -93,9 +93,17 @@ Nothing in this repository should contain real **API keys**, **OAuth client secr
 
 ### YouTube (OAuth and uploads)
 
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, enable **YouTube Data API v3**, and create an OAuth **Desktop** client.  
-2. In **Settings** → **Integrations**, store the **Client ID** and **Client Secret**, then use **Connect YouTube**. The app uses a local callback on `http://127.0.0.1:<port>` handled by Electron.  
-3. A **sample** shape for a bundled file lives at [`assets/oauth/google_oauth_client.sample.json`](assets/oauth/google_oauth_client.sample.json) (the runtime expects a real `google_oauth_client.json` in user data or a bundled path when you package the app; never commit the real file).
+Every user (and every developer) must **create their own** Google OAuth client. This repository and official installers **do not** ship a Google OAuth Client ID or Client Secret.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create (or pick) a project.  
+2. Enable **YouTube Data API v3** for that project.  
+3. Configure the **OAuth consent screen** (External or Internal per your Google Workspace policy; add test users if the app is in *Testing*).  
+4. In **APIs & Services** → **Credentials** → **Create credentials** → **OAuth client ID**, choose application type **Desktop app**. Note the **Client ID** and **Client secret**.  
+5. In ClipCast, open **Settings** → **Integrations**, paste the **Client ID** and **Client secret**, save, then use **Connect YouTube** from the command bar. The app runs a local loopback server for the OAuth redirect (`http://127.0.0.1:<port>`).
+
+Optional: [`assets/oauth/google_oauth_client.sample.json`](assets/oauth/google_oauth_client.sample.json) shows the JSON **shape** only (placeholders—not real credentials). For legacy migration you may still place a real `google_oauth_client.json` under the app user data folder once; the app migrates values into the OS store—**never commit** that file (see [`.gitignore`](.gitignore)).
+
+**Advanced (development only):** you can supply credentials via environment variables `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` (or `YT_GOOGLE_*`) so the main process picks them up without using the Integrations UI—useful for local debugging, not for end users.
 
 ## Project structure (overview)
 
@@ -106,7 +114,7 @@ Nothing in this repository should contain real **API keys**, **OAuth client secr
 ├── yt_pipeline/    # Python pipeline (transcribe, metadata, reports)
 ├── scripts/        # dev, build helpers, clean outputs, CUDA prep, etc.
 ├── vendor/         # Bundled python / ffmpeg (and related) for distribution builds
-├── assets/         # Icons, optional OAuth sample JSON
+├── assets/         # Icons, OAuth JSON shape sample only (BYOK—no real secrets in repo)
 ├── build/          # Installer / icon sources (e.g. .ico)
 ├── website/        # Optional Next.js site (separate from Electron)
 └── .github/        # CI (e.g. release workflow)

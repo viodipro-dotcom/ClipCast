@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import electron from 'electron';
 import { connect, isConnected, uploadVideo, loadClientCredentials } from './youtube.mjs';
-import { getBundledGoogleOAuthClientPathCandidates, redactSecrets } from './secrets.mjs';
+import { redactSecrets } from './secrets.mjs';
 
 const { app, shell } = electron;
 
@@ -82,9 +82,7 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
             ? 'local override (environment variables)'
             : creds?.source === 'legacy'
               ? 'legacy file (migrated to OS keychain)'
-              : creds?.source === 'bundled'
-                ? 'bundled app client'
-                : 'OS keychain';
+              : 'OS keychain (Integrations)';
         
         return {
           ok: true,
@@ -105,9 +103,7 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
         
         const errorMessage = redactSecrets(String(e?.message || e));
         const missingMessage =
-          'YouTube connection is not available yet on this device. Please try again or contact support.';
-        const bundledCandidates = getBundledGoogleOAuthClientPathCandidates();
-        const expectedBundledPath = bundledCandidates.length ? bundledCandidates[0] : '';
+          'YouTube OAuth is not configured. Open Settings → Integrations and add your Google OAuth Desktop client ID and secret (BYOK), or place a legacy google_oauth_client.json in user data for migration.';
         const isMissingClient = errorMessage.includes('OAUTH_CLIENT_MISSING');
 
         return {
@@ -116,12 +112,11 @@ export function initYouTubeIpc(ipcMain, { appRoot, getOutputsDir, logToPipeline 
           error: errorMessage,
           filePath: credsPath,
           fileExists,
-          expectedBundledPath,
           message: fileExists
             ? `Credentials found but invalid: ${errorMessage}`
-            : (isMissingClient
-              ? `Bundled OAuth client missing. Expected file at: ${expectedBundledPath || 'resources/assets/oauth/google_oauth_client.json'}`
-              : (errorMessage || missingMessage)),
+            : isMissingClient
+              ? missingMessage
+              : errorMessage || missingMessage,
         };
       }
     });

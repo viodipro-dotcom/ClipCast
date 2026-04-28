@@ -5,7 +5,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { google } from 'googleapis';
 import {
-  getBundledGoogleOAuthClient,
   getGoogleOAuthClientWithFallback,
   getYouTubeTokens,
   redactSecrets,
@@ -91,16 +90,6 @@ export async function loadClientCredentials() {
   }
   if (clientId && !clientSecret) {
     throw new Error('Missing Google OAuth client secret. Re-enter credentials in app settings.');
-  }
-
-  const bundled = await getBundledGoogleOAuthClient();
-  if (bundled?.clientId && bundled?.clientSecret) {
-    if (!bundled.clientId.includes('.apps.googleusercontent.com') && !bundled.clientId.includes('@')) {
-      throw new Error(
-        `Invalid Client ID format. Expected format: numbers-letters.apps.googleusercontent.com. Got: ${bundled.clientId.slice(0, 50)}...`,
-      );
-    }
-    return { clientId: bundled.clientId, clientSecret: bundled.clientSecret, source: 'bundled' };
   }
 
   throw new Error(OAUTH_CLIENT_MISSING_CODE);

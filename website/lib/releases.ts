@@ -18,10 +18,14 @@ export type ReleaseInfo = {
   assetName?: string;
 };
 
-const OWNER = "viodipro-dotcom";
-const REPO = "ClipCast";
+/** GitHub repo where installers are published (same as electron-builder `build.publish`). Not ClipCast-Releases. */
+const OWNER = process.env.NEXT_PUBLIC_GITHUB_RELEASE_OWNER ?? "viodipro-dotcom";
+const REPO = process.env.NEXT_PUBLIC_GITHUB_RELEASE_REPO ?? "ClipCast";
 const BASE_URL = `https://github.com/${OWNER}/${REPO}`;
 const GITHUB_API_LATEST_URL = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
+
+/** Display slug for UI copy (e.g. download fallback note). */
+export const GITHUB_RELEASE_REPO_SLUG = `${OWNER}/${REPO}`;
 
 export const RELEASES_PAGE_URL = `${BASE_URL}/releases`;
 export const LATEST_RELEASE_URL = `${BASE_URL}/releases/latest`;

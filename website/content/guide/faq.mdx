@@ -34,13 +34,17 @@ Supported video formats: MP4, MOV, AVI, MKV, WEBM, FLV, WMV, M4V.
 
 By default, pipeline outputs (transcripts, metadata, exports) go to your **Outputs folder**. You can change this in **Settings**.
 
+## Do I need my own Google Cloud project for YouTube?
+
+Yes. ClipCast does **not** bundle OAuth credentials. Create a **Desktop app** OAuth client in Google Cloud, enable **YouTube Data API v3**, configure the consent screen, then enter **Client ID** and **Client secret** under **Settings → Integrations**. Details: **[YouTube Connect & Upload](/guide/youtube-connect-upload)**.
+
 ## YouTube won't connect — what to check?
 
-1. OAuth client type must be **Desktop app** (not Web application).
-2. Copy Client ID and Secret fully.
-3. Enable **YouTube Data API v3** in Google Cloud Console.
-4. Configure the OAuth consent screen.
-5. **Advanced:** Add your OAuth credentials via **Settings → Developer mode → Open User Data** (see **YouTube Connect & Upload**).
+1. You added **your own** OAuth client (not a shared ID from this repo)—type **Desktop app** (not Web application).
+2. **Settings → Integrations** contains the correct Client ID and Secret (paste fully).
+3. **YouTube Data API v3** is enabled in Google Cloud Console.
+4. OAuth consent screen is configured; add yourself as a test user if the app is in *Testing*.
+5. Then use the **YouTube chip** → **Reconnect**. Legacy: **`google_oauth_client.json`** in user data still migrates—see **YouTube Connect & Upload**.
 
 <NextLinks prev={{ slug: "troubleshooting", label: "Troubleshooting" }} />
 

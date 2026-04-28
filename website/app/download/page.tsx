@@ -1,6 +1,7 @@
 import styles from "./page.module.css";
 import {
   getLatestReleaseInfo,
+  GITHUB_RELEASE_REPO_SLUG,
   LATEST_RELEASE_URL,
   RELEASES_PAGE_URL,
 } from "@/lib/releases";
@@ -62,7 +63,11 @@ export default async function DownloadPage() {
           </div>
           {isFallback && (
             <p className={styles.fallbackNote}>
-              Latest installer available on GitHub Releases.
+              Open the{" "}
+              <a href={RELEASES_PAGE_URL} target="_blank" rel="noreferrer">
+                releases page for {GITHUB_RELEASE_REPO_SLUG}
+              </a>{" "}
+              on GitHub to download the latest Windows installer (.exe).
             </p>
           )}
         </div>
@@ -73,7 +78,7 @@ export default async function DownloadPage() {
         <ul className={styles.requirementsList}>
           <li>Windows 10 or 11 (64-bit).</li>
           <li>
-            Internet required for sign-in, metadata, billing checks, and uploads.
+            Internet required for sign-in (e.g. YouTube), metadata providers, and uploads.
           </li>
         </ul>
       </section>
